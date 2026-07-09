@@ -6,7 +6,7 @@
     "moduleResolution": "bundler",
     "noEmit": true,
     "strict": true,
-    "types": ["@cloudflare/workers-types"]
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers"]
   },
-  "include": ["src/**/*.ts", "worker-configuration.d.ts"]
+  "include": ["src/**/*.ts", "vitest.config.ts", "worker-configuration.d.ts"]
 }
