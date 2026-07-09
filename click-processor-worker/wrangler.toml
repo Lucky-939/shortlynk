@@ -3,13 +3,17 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = []
 
-# Uncomment when ready to wire up the Queue consumer binding:
-# [[queues.consumers]]
-# queue = "click-events"
-# max_batch_size = 100
-# max_batch_timeout = 5
+[dev]
+port = 8789
 
-# Uncomment when ready to wire up the analytics KV:
-# [[kv_namespaces]]
-# binding = "ANALYTICS_KV"
-# id = "<KV_NAMESPACE_ID>"
+# ── KV Bindings ───────────────────────────────────────────────────────────────
+[[kv_namespaces]]
+binding = "ANALYTICS_KV"
+id = "c19cebc7bd0b4360aabe425be706b4e3"
+
+# ── Queue Consumer ────────────────────────────────────────────────────────────
+[[queues.consumers]]
+queue = "click-events"
+max_batch_size = 100
+max_batch_timeout = 5
+dead_letter_queue = "click-events-dlq"

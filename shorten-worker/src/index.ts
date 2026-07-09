@@ -6,7 +6,7 @@
  */
 
 interface Env {
-  // LINKS_KV: KVNamespace; // Uncomment when KV binding is wired up
+  URLS_KV: KVNamespace;
 }
 
 export default {

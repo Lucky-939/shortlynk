@@ -3,7 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = []
 
-# Uncomment when ready to wire up KV bindings:
-# [[kv_namespaces]]
-# binding = "LINKS_KV"
-# id = "<KV_NAMESPACE_ID>"
+[dev]
+port = 8787
+
+# ── KV Bindings ───────────────────────────────────────────────────────────────
+[[kv_namespaces]]
+binding = "URLS_KV"
+id = "f6652bfca0194e119f8d8a95e3f6fd03"

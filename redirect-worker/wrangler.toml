@@ -3,7 +3,16 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = []
 
-# Uncomment when ready to wire up the click-events Queue:
-# [[queues.producers]]
-# binding = "CLICK_QUEUE"
-# queue = "click-events"
+[dev]
+port = 8788
+
+# ── KV Bindings ───────────────────────────────────────────────────────────────
+# Read-only by convention — no Wrangler concept of read-only KV; enforce in code
+[[kv_namespaces]]
+binding = "URLS_KV"
+id = "f6652bfca0194e119f8d8a95e3f6fd03"
+
+# ── Queue Producer ────────────────────────────────────────────────────────────
+[[queues.producers]]
+binding = "CLICK_QUEUE"
+queue = "click-events"

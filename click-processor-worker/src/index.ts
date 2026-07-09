@@ -6,7 +6,7 @@
  */
 
 interface Env {
-  // ANALYTICS_KV: KVNamespace; // Uncomment when KV binding is wired up
+  ANALYTICS_KV: KVNamespace;
 }
 
 interface ClickEvent {

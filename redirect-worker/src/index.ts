@@ -7,8 +7,8 @@
  */
 
 interface Env {
-  // LINKS_KV: KVNamespace;       // Uncomment when KV binding is wired up
-  // CLICK_QUEUE: Queue<unknown>;  // Uncomment when Queue binding is wired up
+  URLS_KV: KVNamespace;
+  CLICK_QUEUE: Queue<unknown>;
 }
 
 export default {
