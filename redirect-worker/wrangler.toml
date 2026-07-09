@@ -1,0 +1,9 @@
+name = "redirect-worker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = []
+
+# Uncomment when ready to wire up the click-events Queue:
+# [[queues.producers]]
+# binding = "CLICK_QUEUE"
+# queue = "click-events"

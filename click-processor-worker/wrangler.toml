@@ -1,0 +1,15 @@
+name = "click-processor-worker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = []
+
+# Uncomment when ready to wire up the Queue consumer binding:
+# [[queues.consumers]]
+# queue = "click-events"
+# max_batch_size = 100
+# max_batch_timeout = 5
+
+# Uncomment when ready to wire up the analytics KV:
+# [[kv_namespaces]]
+# binding = "ANALYTICS_KV"
+# id = "<KV_NAMESPACE_ID>"

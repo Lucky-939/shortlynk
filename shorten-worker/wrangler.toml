@@ -1,0 +1,9 @@
+name = "shorten-worker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = []
+
+# Uncomment when ready to wire up KV bindings:
+# [[kv_namespaces]]
+# binding = "LINKS_KV"
+# id = "<KV_NAMESPACE_ID>"
