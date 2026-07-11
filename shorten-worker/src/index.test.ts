@@ -215,13 +215,31 @@ describe("POST /shorten — valid URL", () => {
     const res = await authedCall({ longUrl: "https://stored.com" }, kv);
     const { shortCode } = await res.json() as { shortCode: string };
 
-    expect(kv.put).toHaveBeenCalledOnce();
+    // Two puts: (1) link record, (2) user-links index
+    expect(kv.put).toHaveBeenCalledTimes(2);
     const [putKey, putValue] = (kv.put as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
     expect(putKey).toBe(shortCode);
     const record = JSON.parse(putValue);
     expect(record.longUrl).toBe("https://stored.com");
     expect(record.userId).toBe(TEST_USER_ID); // real userId from JWT sub claim
     expect(record.createdAt).toBeDefined();
+  });
+
+  it("appends the new shortCode to user-links:{userId} in URLS_KV", async () => {
+    // First link
+    const res1 = await authedCall({ longUrl: "https://first.com" }, kv);
+    const { shortCode: sc1 } = await res1.json() as { shortCode: string };
+
+    // Second link from the same user
+    const res2 = await authedCall({ longUrl: "https://second.com" }, kv);
+    const { shortCode: sc2 } = await res2.json() as { shortCode: string };
+
+    const indexRaw = kv._store.get(`user-links:${TEST_USER_ID}`);
+    expect(indexRaw).not.toBeNull();
+    const index = JSON.parse(indexRaw!) as string[];
+    expect(index).toContain(sc1);
+    expect(index).toContain(sc2);
+    expect(index).toHaveLength(2);
   });
 });
 

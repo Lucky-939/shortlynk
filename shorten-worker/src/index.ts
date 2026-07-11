@@ -146,7 +146,26 @@ async function handleShorten(request: Request, env: Env): Promise<Response> {
   };
   await env.URLS_KV.put(shortCode, JSON.stringify(record));
 
-  // 5. Build shortUrl from the request's own origin ─────────────────────────
+  // 5. Update per-user link index ───────────────────────────────────────────
+  //
+  // We maintain a secondary index `user-links:{userId}` in URLS_KV so that
+  // analytics-worker can cheaply retrieve all shortCodes belonging to a user
+  // without scanning the entire namespace (KV has no GSI / range-query like
+  // DynamoDB, as noted in the auth phase design review).
+  //
+  // KNOWN RACE-CONDITION LIMITATION: same get-then-put pattern as alias
+  // checks and analytics counters. Two concurrent shorten requests from the
+  // same user could both read the same index state, each append their own
+  // shortCode, then the second write overwrites the first — silently dropping
+  // one entry. At this project's scale this is an accepted limitation. A
+  // Durable Object acting as a serialised write gate would eliminate it.
+  const indexKey = `user-links:${userId}`;
+  const rawIndex = await env.URLS_KV.get(indexKey);
+  const linkIndex: string[] = rawIndex !== null ? (JSON.parse(rawIndex) as string[]) : [];
+  linkIndex.push(shortCode);
+  await env.URLS_KV.put(indexKey, JSON.stringify(linkIndex));
+
+  // 6. Build shortUrl from the request's own origin ─────────────────────────
   // Workers naturally receive the deployed origin in request.url, so this
   // will produce the correct public URL without any extra config once deployed.
   // In local dev, the origin will be http://127.0.0.1:8787.

@@ -1,0 +1,22 @@
+name = "analytics-worker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = []
+
+[dev]
+port = 8791
+
+# ── KV Bindings ───────────────────────────────────────────────────────────────
+# Both namespaces are read-only by convention in this worker.
+[[kv_namespaces]]
+binding = "URLS_KV"
+id = "f6652bfca0194e119f8d8a95e3f6fd03"
+
+[[kv_namespaces]]
+binding = "ANALYTICS_KV"
+id = "c19cebc7bd0b4360aabe425be706b4e3"
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# JWT_SECRET is NOT listed here — it is a Wrangler secret, not a plain var.
+# For local dev, set it in .dev.vars (gitignored).
+# For production, run: wrangler secret put JWT_SECRET --cwd analytics-worker
