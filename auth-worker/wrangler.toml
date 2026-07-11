@@ -1,0 +1,17 @@
+name = "auth-worker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = []
+
+[dev]
+port = 8790
+
+# ── KV Bindings ───────────────────────────────────────────────────────────────
+[[kv_namespaces]]
+binding = "USERS_KV"
+id = "449a2d00b5b043cebb04da535de1a17c"
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# JWT_SECRET is NOT listed here — it is a Wrangler secret, not a plain var.
+# For local dev, set it in .dev.vars (gitignored).
+# For production, run: wrangler secret put JWT_SECRET --cwd auth-worker

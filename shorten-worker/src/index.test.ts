@@ -7,14 +7,25 @@
  * tests that need real Workers APIs (Durable Objects, Cache, etc.), which
  * we don't need here.
  *
- * crypto.getRandomValues() is available globally in Node.js ≥19, which
- * covers the generateShortCode() calls in the handler.
+ * crypto.getRandomValues() and crypto.subtle are available globally in
+ * Node.js ≥ 18.7, which covers both generateShortCode() and signJwt().
+ *
+ * AUTH NOTE: POST /shorten now requires a valid Bearer JWT. All success-path
+ * tests generate a token via signJwt() at the start of the suite using a
+ * shared TEST_SECRET. The env mock carries the same secret for verification.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import worker from "./index";
 import { validateLongUrl, validateAlias } from "./validators";
 import { generateShortCode } from "./shortcode";
+import { signJwt } from "../../shared/jwt";
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const TEST_SECRET = "test-jwt-secret-at-least-32-chars!";
+const TEST_USER_ID = "test-user-uuid-1234";
+const TEST_EMAIL = "tester@example.com";
 
 // ── In-memory KV mock ────────────────────────────────────────────────────────
 
@@ -34,21 +45,42 @@ function createMockKV() {
   } as unknown as KVNamespace & { _store: Map<string, string> };
 }
 
-// ── Helper ───────────────────────────────────────────────────────────────────
+// ── JWT test token ────────────────────────────────────────────────────────────
 
-function makeRequest(body: unknown): Request {
+// Generated once before all tests — avoids per-test async overhead.
+// All success-path tests use this token; auth-rejection tests use no token
+// or a garbage string.
+let validToken: string;
+
+beforeAll(async () => {
+  validToken = await signJwt(
+    { sub: TEST_USER_ID, email: TEST_EMAIL },
+    TEST_SECRET
+  );
+});
+
+// ── Request helpers ───────────────────────────────────────────────────────────
+
+function makeRequest(body: unknown, token?: string): Request {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   return new Request("http://localhost/shorten", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
 }
 
-async function callWorker(body: unknown, kv: KVNamespace) {
-  const req = makeRequest(body);
-  const env = { URLS_KV: kv };
+async function callWorker(body: unknown, kv: KVNamespace, token?: string) {
+  const req = makeRequest(body, token);
+  const env = { URLS_KV: kv, JWT_SECRET: TEST_SECRET };
   const ctx = {} as ExecutionContext;
   return worker.fetch(req, env, ctx);
+}
+
+// Shorthand for authed calls (all normal success/failure tests)
+async function authedCall(body: unknown, kv: KVNamespace) {
+  return callWorker(body, kv, validToken);
 }
 
 // ── Unit tests: validators ───────────────────────────────────────────────────
@@ -114,8 +146,48 @@ describe("generateShortCode()", () => {
 
   it("produces unique codes on repeated calls", () => {
     const codes = new Set(Array.from({ length: 20 }, () => generateShortCode(7)));
-    // 62^7 ≈ 3.5 trillion — 20 calls should all be unique
     expect(codes.size).toBe(20);
+  });
+});
+
+// ── Auth guard tests (3 new) ──────────────────────────────────────────────────
+
+describe("POST /shorten — Authorization header", () => {
+  let kv: ReturnType<typeof createMockKV>;
+  beforeEach(() => { kv = createMockKV(); });
+
+  it("returns 401 when no Authorization header is present", async () => {
+    // callWorker with no token argument = no Authorization header
+    const res = await callWorker({ longUrl: "https://example.com" }, kv);
+    expect(res.status).toBe(401);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("Authorization");
+  });
+
+  it("returns 401 for a garbage / malformed token", async () => {
+    const res = await callWorker({ longUrl: "https://example.com" }, kv, "not.a.valid.jwt");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 for a token signed with the wrong secret", async () => {
+    const badToken = await signJwt(
+      { sub: "evil-user", email: "hacker@evil.com" },
+      "completely-different-secret!!"
+    );
+    const res = await callWorker({ longUrl: "https://example.com" }, kv, badToken);
+    expect(res.status).toBe(401);
+  });
+
+  it("succeeds with a valid token and stores the correct userId in the record", async () => {
+    const res = await authedCall({ longUrl: "https://example.com/long" }, kv);
+    expect(res.status).toBe(201);
+
+    const { shortCode } = await res.json() as { shortCode: string };
+    const raw = kv._store.get(shortCode);
+    expect(raw).not.toBeNull();
+    const record = JSON.parse(raw!) as { userId: string };
+    // userId in KV must match the sub claim from the JWT — not "anonymous"
+    expect(record.userId).toBe(TEST_USER_ID);
   });
 });
 
@@ -127,7 +199,7 @@ describe("POST /shorten — valid URL", () => {
   beforeEach(() => { kv = createMockKV(); });
 
   it("returns 201 with shortUrl, shortCode, longUrl, createdAt", async () => {
-    const res = await callWorker({ longUrl: "https://example.com/long/path" }, kv);
+    const res = await authedCall({ longUrl: "https://example.com/long/path" }, kv);
 
     expect(res.status).toBe(201);
     expect(res.headers.get("Content-Type")).toContain("application/json");
@@ -139,8 +211,8 @@ describe("POST /shorten — valid URL", () => {
     expect(body.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 
-  it("persists a LinkRecord to URLS_KV on success", async () => {
-    const res = await callWorker({ longUrl: "https://stored.com" }, kv);
+  it("persists a LinkRecord to URLS_KV with real userId (not 'anonymous')", async () => {
+    const res = await authedCall({ longUrl: "https://stored.com" }, kv);
     const { shortCode } = await res.json() as { shortCode: string };
 
     expect(kv.put).toHaveBeenCalledOnce();
@@ -148,7 +220,7 @@ describe("POST /shorten — valid URL", () => {
     expect(putKey).toBe(shortCode);
     const record = JSON.parse(putValue);
     expect(record.longUrl).toBe("https://stored.com");
-    expect(record.userId).toBe("anonymous");
+    expect(record.userId).toBe(TEST_USER_ID); // real userId from JWT sub claim
     expect(record.createdAt).toBeDefined();
   });
 });
@@ -159,24 +231,24 @@ describe("POST /shorten — invalid URL", () => {
   beforeEach(() => { kv = createMockKV(); });
 
   it("returns 400 with { error: 'Invalid URL' } for a plain string", async () => {
-    const res = await callWorker({ longUrl: "not-a-url" }, kv);
+    const res = await authedCall({ longUrl: "not-a-url" }, kv);
     expect(res.status).toBe(400);
     const body = await res.json() as { error: string };
     expect(body.error).toBe("Invalid URL");
   });
 
   it("returns 400 for javascript: URI", async () => {
-    const res = await callWorker({ longUrl: "javascript:alert(1)" }, kv);
+    const res = await authedCall({ longUrl: "javascript:alert(1)" }, kv);
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when longUrl is missing", async () => {
-    const res = await callWorker({}, kv);
+    const res = await authedCall({}, kv);
     expect(res.status).toBe(400);
   });
 
   it("does not call URLS_KV.put on validation failure", async () => {
-    await callWorker({ longUrl: "bad" }, kv);
+    await authedCall({ longUrl: "bad" }, kv);
     expect(kv.put).not.toHaveBeenCalled();
   });
 });
@@ -187,31 +259,29 @@ describe("POST /shorten — custom alias", () => {
   beforeEach(() => { kv = createMockKV(); });
 
   it("returns 201 using the custom alias as shortCode", async () => {
-    const res = await callWorker({ longUrl: "https://example.com", customAlias: "my-link" }, kv);
+    const res = await authedCall({ longUrl: "https://example.com", customAlias: "my-link" }, kv);
     expect(res.status).toBe(201);
     const body = await res.json() as { shortCode: string };
     expect(body.shortCode).toBe("my-link");
   });
 
   it("returns 400 for an alias with invalid characters", async () => {
-    const res = await callWorker({ longUrl: "https://example.com", customAlias: "bad alias!" }, kv);
+    const res = await authedCall({ longUrl: "https://example.com", customAlias: "bad alias!" }, kv);
     expect(res.status).toBe(400);
   });
 
   it("returns 400 for an alias shorter than 3 chars", async () => {
-    const res = await callWorker({ longUrl: "https://example.com", customAlias: "ab" }, kv);
+    const res = await authedCall({ longUrl: "https://example.com", customAlias: "ab" }, kv);
     expect(res.status).toBe(400);
   });
 
-  // ── duplicate alias rejected ────────────────────────────────────────────
   it("returns 409 with { error: 'Alias already taken' } when alias exists in KV", async () => {
-    // Pre-populate KV with the alias
     kv._store.set(
       "taken-alias",
-      JSON.stringify({ longUrl: "https://original.com", createdAt: new Date().toISOString(), userId: "anonymous" })
+      JSON.stringify({ longUrl: "https://original.com", createdAt: new Date().toISOString(), userId: "someone" })
     );
 
-    const res = await callWorker({ longUrl: "https://new.com", customAlias: "taken-alias" }, kv);
+    const res = await authedCall({ longUrl: "https://new.com", customAlias: "taken-alias" }, kv);
     expect(res.status).toBe(409);
     const body = await res.json() as { error: string };
     expect(body.error).toBe("Alias already taken");
@@ -219,14 +289,13 @@ describe("POST /shorten — custom alias", () => {
 
   it("does not overwrite the existing KV entry on 409", async () => {
     kv._store.set("taken-alias", JSON.stringify({ longUrl: "https://original.com", createdAt: "", userId: "" }));
-    await callWorker({ longUrl: "https://new.com", customAlias: "taken-alias" }, kv);
+    await authedCall({ longUrl: "https://new.com", customAlias: "taken-alias" }, kv);
     expect(kv.put).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /shorten — collision retry", () => {
   it("returns 500 when all collision-retry attempts are exhausted", async () => {
-    // A KV where every .get() returns non-null → every candidate looks taken
     const alwaysTaken: KVNamespace = {
       get: vi.fn(async () => "occupied" as unknown as null),
       put: vi.fn(async () => undefined),
@@ -235,7 +304,7 @@ describe("POST /shorten — collision retry", () => {
       getWithMetadata: vi.fn(async () => ({ value: "occupied", metadata: null, cacheStatus: null })),
     } as unknown as KVNamespace;
 
-    const res = await callWorker({ longUrl: "https://example.com" }, alwaysTaken);
+    const res = await callWorker({ longUrl: "https://example.com" }, alwaysTaken, validToken);
     expect(res.status).toBe(500);
     const body = await res.json() as { error: string };
     expect(body.error).toContain("unique short code");
@@ -251,8 +320,7 @@ describe("POST /shorten — collision retry", () => {
       getWithMetadata: vi.fn(async () => ({ value: null, metadata: null, cacheStatus: null })),
     } as unknown as KVNamespace;
 
-    await callWorker({ longUrl: "https://example.com" }, alwaysTaken);
-    // Should have tried exactly 5 times (MAX_COLLISION_RETRIES)
+    await callWorker({ longUrl: "https://example.com" }, alwaysTaken, validToken);
     expect(getCount.n).toBe(5);
   });
 });

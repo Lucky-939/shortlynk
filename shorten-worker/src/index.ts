@@ -2,13 +2,19 @@
  * shorten-worker — POST /shorten
  *
  * Creates a short URL mapping in URLS_KV and returns the short URL.
+ *
+ * Requires a valid Bearer JWT in the Authorization header (issued by
+ * auth-worker). The userId from the token's `sub` claim is stored with
+ * the link record, replacing the former hardcoded "anonymous" value.
  */
 
 import { validateLongUrl, validateAlias } from "./validators";
 import { generateShortCode } from "./shortcode";
+import { verifyJwt } from "../../shared/jwt";
 
 export interface Env {
   URLS_KV: KVNamespace;
+  JWT_SECRET: string;
 }
 
 /** Shape stored as a JSON string value in URLS_KV. */
@@ -36,9 +42,32 @@ function json(body: unknown, status: number): Response {
   });
 }
 
+// ── Auth ───────────────────────────────────────────────────────────────────────
+
+/**
+ * Extracts and verifies the Bearer token from the Authorization header.
+ *
+ * @returns The verified JWT payload (containing `sub` = userId) or null if
+ *          the header is missing, malformed, or the token is invalid/expired.
+ */
+async function extractVerifiedToken(request: Request, secret: string) {
+  const authHeader = request.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) return null;
+  return verifyJwt(token, secret);
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 
 async function handleShorten(request: Request, env: Env): Promise<Response> {
+  // 0. Verify JWT ────────────────────────────────────────────────────────────
+  const payload = await extractVerifiedToken(request, env.JWT_SECRET);
+  if (!payload) {
+    return json({ error: "Missing or invalid Authorization token" }, 401);
+  }
+  const userId = payload.sub;
+
   // 1. Parse JSON body ──────────────────────────────────────────────────────
   let body: ShortenRequestBody;
   try {
@@ -113,7 +142,7 @@ async function handleShorten(request: Request, env: Env): Promise<Response> {
   const record: LinkRecord = {
     longUrl,
     createdAt,
-    userId: "anonymous", // auth will be added in a future step
+    userId, // real userId from verified JWT, no longer "anonymous"
   };
   await env.URLS_KV.put(shortCode, JSON.stringify(record));
 
