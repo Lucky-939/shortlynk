@@ -5,6 +5,7 @@ node_modules/
 
 # ─── Wrangler / Cloudflare Workers ───────────────────────────────────────────
 .wrangler/
+.wrangler-state/
 worker-configuration.d.ts
 
 # NEVER commit — Wrangler's local secrets file
