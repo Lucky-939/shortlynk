@@ -1,22 +1,120 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Design tokens ──────────────────────────────────────────────────────────
+ * Single source of truth for the ShortLynk colour palette.
+ * These are referenced by tailwind.config.ts via var() so every Tailwind
+ * utility class (bg-accent, text-muted, border-border, etc.) stays in sync.
+ * See THEME.md for the full rationale behind each choice.
+ * ────────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --background: #0a0a0f;
-  --foreground: #f0f0f5;
+  /* Backgrounds */
+  --color-bg:       #0D0D0B;   /* page background — near-black, warm undertone */
+  --color-surface:  #161614;   /* card / panel background                      */
+  --color-raised:   #1E1E1A;   /* hover surfaces, nested panels                */
+
+  /* Borders */
+  --color-border:   #2A2A26;   /* all standard borders and dividers            */
+
+  /* Text */
+  --color-text:     #F0EDE8;   /* primary copy — warm white, not pure #fff     */
+  --color-muted:    #7A7670;   /* secondary labels, placeholders               */
+
+  /* Accent — electric chartreuse: the ONE chromatic colour in the UI          */
+  --color-accent:   #E8FF47;
+  --color-accent-h: #D4EB38;   /* accent hover / pressed                       */
+
+  /* Semantic states */
+  --color-success:  #4ADE80;
+  --color-error:    #F87171;
 }
 
-* {
+/* ─── Base resets ────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
+html {
+  /* Prevent layout shift on scrollbar appear/disappear */
+  scrollbar-gutter: stable;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: "Inter", system-ui, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  /* font-family is set via next/font CSS variables injected in layout.tsx */
+  font-family: var(--font-body), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Prevent text inflation on mobile */
+  text-size-adjust: 100%;
+}
+
+/* ─── Typography helpers ─────────────────────────────────────────────────── */
+
+/* Apply display font to all headings by default; override with font-sans in
+   components that need body weight at heading size. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+/* Short codes and URLs — the product's core output — always in mono. */
+.code,
+code,
+kbd,
+[data-shortcode],
+[data-url] {
+  font-family: var(--font-mono), monospace;
+  font-variant-ligatures: none; /* keep each char distinct in short codes */
+}
+
+/* ─── Motif: left-border accent ──────────────────────────────────────────── */
+
+/* Reusable utility class for the single recurring visual motif:
+   a 3px left border in the accent colour on active / selected elements.
+   Use alongside Tailwind classes, e.g.:
+     <li class="accent-bar pl-4 ...">
+*/
+.accent-bar {
+  border-left: 3px solid var(--color-accent);
+}
+
+/* ─── Focus styles ───────────────────────────────────────────────────────── */
+
+/* Replace browser default outline with accent underline — keeps the
+   rectangular motif while remaining WCAG 2.1 AA compliant. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ─── Scrollbar (Webkit) — minimal, on-theme ─────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
+/* ─── Selection ──────────────────────────────────────────────────────────── */
+
+::selection {
+  background-color: var(--color-accent);
+  color: var(--color-bg);
 }
