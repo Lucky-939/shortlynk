@@ -35,6 +35,27 @@ const MAX_COLLISION_RETRIES = 5;
 
 // ── Utility ────────────────────────────────────────────────────────────────────
 
+// ── CORS ──────────────────────────────────────────────────────────────────────
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Max-Age": "86400",
+};
+
+function withCors(response: Response): Response {
+  const next = new Response(response.body, response);
+  Object.entries(CORS_HEADERS).forEach(([k, v]) => next.headers.set(k, v));
+  return next;
+}
+
+function handleOptions(): Response {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -181,10 +202,12 @@ export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const { pathname } = new URL(request.url);
 
+    if (request.method === "OPTIONS") return handleOptions();
+
     if (request.method === "POST" && pathname === "/shorten") {
-      return handleShorten(request, env);
+      return withCors(await handleShorten(request, env));
     }
 
-    return json({ error: "Not found" }, 404);
+    return withCors(json({ error: "Not found" }, 404));
   },
 } satisfies ExportedHandler<Env>;

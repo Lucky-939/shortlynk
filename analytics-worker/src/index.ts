@@ -28,6 +28,25 @@ interface LinkRecord {
   userId: string;
 }
 
+// ── CORS ──────────────────────────────────────────────────────────────────────
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Max-Age": "86400",
+};
+
+function withCors(response: Response): Response {
+  const next = new Response(response.body, response);
+  Object.entries(CORS_HEADERS).forEach(([k, v]) => next.headers.set(k, v));
+  return next;
+}
+
+function handleOptions(): Response {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 function json(body: unknown, status: number): Response {
@@ -221,21 +240,23 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
 
+    if (request.method === "OPTIONS") return handleOptions();
+
     if (request.method !== "GET") {
-      return json({ error: "Method not allowed" }, 405);
+      return withCors(json({ error: "Method not allowed" }, 405));
     }
 
     // GET /links
     if (pathname === "/links") {
-      return handleListLinks(request, env);
+      return withCors(await handleListLinks(request, env));
     }
 
     // GET /links/{shortCode}/stats
     const statsMatch = pathname.match(/^\/links\/([^/]+)\/stats$/);
     if (statsMatch) {
-      return handleLinkStats(request, env, statsMatch[1]);
+      return withCors(await handleLinkStats(request, env, statsMatch[1]));
     }
 
-    return json({ error: "Not found" }, 404);
+    return withCors(json({ error: "Not found" }, 404));
   },
 } satisfies ExportedHandler<Env>;
