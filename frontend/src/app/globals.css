@@ -118,3 +118,24 @@ kbd,
   background-color: var(--color-accent);
   color: var(--color-bg);
 }
+
+/* ─── Browser autofill override ──────────────────────────────────────────────
+ * Chrome/Edge force a white or light-yellow background on autofilled inputs
+ * that normal `background-color` CSS cannot override (it's applied at a higher
+ * specificity by the browser UA stylesheet). The only reliable workaround is:
+ *   1. A large inset box-shadow in the desired background color — this paints
+ *      over the autofill background without fighting the cascade.
+ *   2. -webkit-text-fill-color to override the forced dark text colour.
+ *   3. A very long background-color transition so the UA's timed colour-reset
+ *      effectively never fires during normal user interaction.
+ * This is the industry-standard fix (used by Stripe, Linear, Vercel, etc.).
+ * ────────────────────────────────────────────────────────────────────────── */
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--color-text);
+  -webkit-box-shadow: 0 0 0px 1000px var(--color-surface) inset;
+  transition: background-color 5000s ease-in-out 0s;
+  caret-color: var(--color-text);
+}
