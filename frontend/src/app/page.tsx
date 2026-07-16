@@ -1,75 +1,99 @@
+"use client";
+
+import NavBar from "@/components/NavBar";
+import ShortenForm from "@/components/ShortenForm";
+import { useAuth } from "@/components/AuthProvider";
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Paste your URL",
+    body: "Drop any long link into the box. Optionally add a custom alias.",
+  },
+  {
+    n: "02",
+    title: "Get your short link",
+    body: "We return a short code instantly — hosted at the edge in 300+ cities.",
+  },
+  {
+    n: "03",
+    title: "Track every click",
+    body: "See total clicks, hourly trends, and top referrers from your dashboard.",
+  },
+];
+
 export default function HomePage() {
+  const { user } = useAuth();
+
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4 bg-[#0a0a0f]">
-      {/* ── Hero ── */}
-      <div className="text-center max-w-2xl mx-auto">
-        {/* Logo / wordmark */}
-        <div className="mb-6 flex items-center justify-center gap-2">
-          <span className="text-4xl">🔗</span>
-          <span className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-violet-400 via-fuchsia-400 to-pink-400 bg-clip-text text-transparent">
-            ShortLynk
-          </span>
-        </div>
+    <>
+      <NavBar />
+      <main className="max-w-5xl mx-auto px-4">
 
-        <h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight text-white mb-4 leading-tight">
-          Shorten. Share.{" "}
-          <span className="bg-gradient-to-r from-violet-400 to-pink-400 bg-clip-text text-transparent">
-            Analyse.
-          </span>
-        </h1>
+        {/* ── Hero ─────────────────────────────────────────────────────── */}
+        <section className="pt-24 pb-16 text-center">
+          <div className="inline-block border border-border px-3 py-1 mb-6">
+            <span className="text-xs font-mono text-muted uppercase tracking-widest">
+              Built on Cloudflare Workers
+            </span>
+          </div>
 
-        <p className="text-lg text-slate-400 mb-10 leading-relaxed">
-          A blazing-fast URL shortener built on{" "}
-          <span className="text-white font-medium">Cloudflare Workers</span> and{" "}
-          <span className="text-white font-medium">Pages</span>. Shorten links in
-          milliseconds, track every click at the edge.
-        </p>
+          <h1 className="font-display text-5xl sm:text-6xl font-bold text-text mb-5 leading-[1.1] tracking-tight">
+            Short links that<br />
+            <span className="text-accent">actually tell you things.</span>
+          </h1>
 
-        {/* CTA placeholder */}
-        <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          <button
-            id="cta-shorten"
-            className="px-8 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-semibold text-base shadow-lg shadow-violet-500/30 hover:shadow-violet-500/50 hover:scale-105 transition-all duration-200 cursor-not-allowed opacity-80"
-            disabled
-            aria-disabled="true"
-            title="Coming soon"
-          >
-            Shorten a URL →
-          </button>
+          <p className="text-muted text-lg max-w-xl mx-auto mb-12 leading-relaxed">
+            Shorten URLs in milliseconds, track clicks at the edge.
+            No bloat. No tracking pixels. Just clean analytics.
+          </p>
+
+          {/* Shorten box */}
+          <div className="max-w-xl mx-auto">
+            <ShortenForm placeholder="Paste a long URL to shorten it…" />
+            {!user && (
+              <p className="text-muted text-xs mt-3 font-mono">
+                ↑ Hit Shorten — you'll be asked to sign in first.
+              </p>
+            )}
+          </div>
+        </section>
+
+        {/* ── Divider ───────────────────────────────────────────────────── */}
+        <div className="border-t border-border" />
+
+        {/* ── How it works ──────────────────────────────────────────────── */}
+        <section className="py-20">
+          <h2 className="font-display text-2xl font-semibold text-text mb-12 text-center">
+            How it works
+          </h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+            {STEPS.map((step) => (
+              <div key={step.n} className="border border-border bg-surface p-6">
+                <span className="font-mono text-accent text-xs mb-3 block">{step.n}</span>
+                <h3 className="font-display font-semibold text-text text-lg mb-2">
+                  {step.title}
+                </h3>
+                <p className="text-muted text-sm leading-relaxed">{step.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── Footer ────────────────────────────────────────────────────── */}
+        <footer className="border-t border-border py-8 flex items-center justify-between text-muted text-xs font-mono flex-wrap gap-4">
+          <span>ShortLynk — edge-native URL shortener</span>
           <a
-            id="cta-github"
-            href="https://github.com"
+            href="https://github.com/Lucky-939/shortlynk"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-8 py-3 rounded-xl border border-slate-700 text-slate-300 font-semibold text-base hover:border-slate-500 hover:text-white hover:scale-105 transition-all duration-200"
+            className="hover:text-accent transition-colors"
           >
-            View on GitHub
+            GitHub →
           </a>
-        </div>
-      </div>
-
-      {/* ── Feature pills ── */}
-      <div className="mt-20 flex flex-wrap gap-3 justify-center max-w-xl">
-        {[
-          "⚡ Edge-native",
-          "📊 Click analytics",
-          "🔒 No tracking cookies",
-          "🌍 Global CDN",
-          "☁️ Cloudflare Pages",
-        ].map((feature) => (
-          <span
-            key={feature}
-            className="px-4 py-1.5 rounded-full text-sm font-medium bg-slate-800 text-slate-300 border border-slate-700"
-          >
-            {feature}
-          </span>
-        ))}
-      </div>
-
-      {/* ── Footer ── */}
-      <footer className="mt-16 text-slate-600 text-sm">
-        ShortLynk — scaffold placeholder · business logic coming soon
-      </footer>
-    </main>
+        </footer>
+      </main>
+    </>
   );
 }
