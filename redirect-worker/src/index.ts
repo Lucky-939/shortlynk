@@ -4,7 +4,15 @@
  * 1. Looks up shortCode in URLS_KV.
  * 2. Returns 404 JSON if not found.
  * 3. Enqueues a ClickEvent to CLICK_QUEUE via ctx.waitUntil() (non-blocking).
- * 4. Returns a 301 redirect to the stored longUrl.
+ * 4. Returns a 302 redirect to the stored longUrl.
+ *
+ * WHY 302 NOT 301:
+ * 301 (Moved Permanently) is cached by browsers indefinitely. Every repeated
+ * visit to the same short URL would be served from the browser cache and never
+ * reach this worker — meaning clicks go uncounted. 302 (Found / temporary) is
+ * never cached, so every visit hits the worker and generates a click event.
+ * This is the same approach used by Bitly, TinyURL, and every analytics-aware
+ * link shortener.
  */
 
 import { hashIp } from "./hash";
@@ -101,8 +109,10 @@ async function handleRedirect(
   ctx.waitUntil(env.CLICK_QUEUE.send(clickEvent));
 
   // 3. Redirect ───────────────────────────────────────────────────────────────
+  //
+  // 302 (Found / temporary redirect) is intentional — see module comment above.
   return new Response(null, {
-    status: 301,
+    status: 302,
     headers: { Location: record.longUrl },
   });
 }
