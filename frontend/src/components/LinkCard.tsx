@@ -6,8 +6,9 @@ import CopyButton from "./CopyButton";
 
 interface LinkCardProps {
   link: LinkSummary;
-  shortenApiBase: string;
 }
+
+const REDIRECT_BASE = process.env.NEXT_PUBLIC_REDIRECT_BASE_URL ?? "";
 
 /** Formats a date string to a readable short form: "15 Jun 2025" */
 function formatDate(iso: string): string {
@@ -27,8 +28,8 @@ function formatDate(iso: string): string {
  * Short code in monospace, truncated URL with tooltip, click count, copy button.
  * Clicking the row navigates to the stats detail page.
  */
-export default function LinkCard({ link, shortenApiBase }: LinkCardProps) {
-  const shortUrl = `${shortenApiBase}/${link.shortCode}`;
+export default function LinkCard({ link }: LinkCardProps) {
+  const shortUrl = `${REDIRECT_BASE}/${link.shortCode}`;
 
   return (
     <div className="group border border-border bg-surface hover:border-l-[3px] hover:border-l-accent hover:pl-[calc(1rem-3px)] pl-4 pr-4 py-4 transition-all duration-120">

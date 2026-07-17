@@ -10,7 +10,6 @@ import ShortenForm from "@/components/ShortenForm";
 import ErrorState from "@/components/ErrorState";
 import { DashboardSkeleton } from "@/components/LoadingSkeleton";
 
-const SHORTEN_BASE = process.env.NEXT_PUBLIC_SHORTEN_API_URL ?? "";
 
 export default function DashboardPage() {
   const { user, logout, isLoading: authLoading } = useAuth();
@@ -106,7 +105,7 @@ export default function DashboardPage() {
         ) : (
           <div className="space-y-2">
             {links.map((link) => (
-              <LinkCard key={link.shortCode} link={link} shortenApiBase={SHORTEN_BASE} />
+              <LinkCard key={link.shortCode} link={link} />
             ))}
           </div>
         )}

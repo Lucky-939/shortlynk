@@ -12,7 +12,7 @@ import ErrorState from "@/components/ErrorState";
 import { StatsSkeleton } from "@/components/LoadingSkeleton";
 import CopyButton from "@/components/CopyButton";
 
-const SHORTEN_BASE = process.env.NEXT_PUBLIC_SHORTEN_API_URL ?? "";
+const REDIRECT_BASE = process.env.NEXT_PUBLIC_REDIRECT_BASE_URL ?? "";
 const POLL_INTERVAL_MS = 5000;
 
 /**
@@ -92,7 +92,7 @@ export default function StatsClient() {
   if (authLoading || (!user && !error)) return null;
   if (!shortCode) return null;
 
-  const shortUrl = `${SHORTEN_BASE}/${shortCode}`;
+  const shortUrl = `${REDIRECT_BASE}/${shortCode}`;
 
   return (
     <>
