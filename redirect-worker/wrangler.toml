@@ -6,20 +6,22 @@ compatibility_flags = []
 [dev]
 port = 8788
 
+# ── Plain vars ────────────────────────────────────────────────────────────────
+# ANALYTICS_WORKER_URL is the base URL of analytics-worker.
+# Local dev: http://localhost:8791 (set here so wrangler picks it up automatically).
+# Production: override via `wrangler secret put ANALYTICS_WORKER_URL` or set in
+#             the Cloudflare dashboard, OR replace with a Service Binding.
+[vars]
+ANALYTICS_WORKER_URL = "http://localhost:8791"
+
 # ── KV Bindings ───────────────────────────────────────────────────────────────
-# Read-only by convention — no Wrangler concept of read-only KV; enforce in code
+# URLS_KV: read-only by convention — only shorten-worker writes to it.
+# ANALYTICS_KV is intentionally NOT bound here. analytics-worker is the sole
+# writer to ANALYTICS_KV; redirect-worker calls it via HTTP instead of writing
+# directly, which avoids SQLite WAL cross-process read-isolation issues in local dev.
 [[kv_namespaces]]
 binding = "URLS_KV"
 id = "f6652bfca0194e119f8d8a95e3f6fd03"
-
-# ANALYTICS_KV is written by this worker directly (via waitUntil) in addition
-# to queueing the click event. This dual-write approach is needed because in
-# local dev, separate wrangler dev processes cannot relay queue messages to
-# each other. The direct KV write ensures click counts work locally; the queue
-# write ensures correct async processing in production.
-[[kv_namespaces]]
-binding = "ANALYTICS_KV"
-id = "c19cebc7bd0b4360aabe425be706b4e3"
 
 # ── Queue Producer ────────────────────────────────────────────────────────────
 [[queues.producers]]

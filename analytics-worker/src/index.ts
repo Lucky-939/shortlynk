@@ -1,10 +1,12 @@
 /**
- * analytics-worker — GET /links, GET /links/{shortCode}/stats
+ * analytics-worker — GET /links, GET /links/{shortCode}/stats,
+ *                      POST /internal/record-click
  *
- * Read-only analytics API. Protected by the same JWT issued by auth-worker.
- * Reads from two KV namespaces (both read-only by convention):
- *   URLS_KV      — link records and the per-user link index
- *   ANALYTICS_KV — click counters written by click-processor-worker
+ * Read-only analytics API for the frontend. Protected by JWT.
+ * Also accepts internal click events from redirect-worker via HTTP —
+ * analytics-worker is the SOLE writer to ANALYTICS_KV, which avoids
+ * cross-process SQLite WAL read-isolation issues that arise when two
+ * separate wrangler dev processes share the same KV namespace file.
  *
  * JWT_SECRET must match auth-worker and shorten-worker. Provided as a
  * Wrangler secret (not a plain var). For local dev, add to .dev.vars.
@@ -26,6 +28,15 @@ interface LinkRecord {
   longUrl: string;
   createdAt: string;
   userId: string;
+}
+
+/** Shape of click events posted by redirect-worker. */
+interface ClickEvent {
+  shortCode: string;
+  timestamp: string;
+  userAgent: string | null;
+  referer: string | null;
+  ipHash: string | null;
 }
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
@@ -60,6 +71,18 @@ function json(body: unknown, status: number): Response {
 async function getCounter(kv: KVNamespace, key: string): Promise<number> {
   const raw = await kv.get(key);
   return raw !== null ? parseInt(raw, 10) : 0;
+}
+
+/** Increments a KV counter by 1. Read-modify-write (see click-processor comments). */
+async function kvIncrement(kv: KVNamespace, key: string): Promise<void> {
+  const raw = await kv.get(key);
+  const current = raw !== null ? parseInt(raw, 10) : 0;
+  await kv.put(key, String(current + 1));
+}
+
+/** Truncates ISO timestamp to YYYY-MM-DDTHH for hourly bucket keys. */
+function truncateToHour(iso: string): string {
+  return iso.slice(0, 13);
 }
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
@@ -241,6 +264,27 @@ export default {
     const { pathname } = url;
 
     if (request.method === "OPTIONS") return handleOptions();
+
+    // POST /internal/record-click — called by redirect-worker to record a click.
+    // No auth: this is an internal endpoint, not exposed to the public.
+    // In production, replace with a Cloudflare Service Binding.
+    if (request.method === "POST" && pathname === "/internal/record-click") {
+      try {
+        const event = await request.json() as ClickEvent;
+        const { shortCode, timestamp, referer } = event;
+        const hour = truncateToHour(timestamp);
+        const referrerKey = referer && referer.trim() !== "" ? referer : "direct";
+        await Promise.all([
+          kvIncrement(env.ANALYTICS_KV, `total:${shortCode}`),
+          kvIncrement(env.ANALYTICS_KV, `hourly:${shortCode}:${hour}`),
+          kvIncrement(env.ANALYTICS_KV, `referrer:${shortCode}:${referrerKey}`),
+        ]);
+        return withCors(json({ ok: true }, 200));
+      } catch (err) {
+        console.error("[analytics] record-click failed:", err);
+        return withCors(json({ error: "Failed to record click" }, 500));
+      }
+    }
 
     if (request.method !== "GET") {
       return withCors(json({ error: "Method not allowed" }, 405));

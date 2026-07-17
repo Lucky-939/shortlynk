@@ -3,7 +3,7 @@
  *
  * 1. Looks up shortCode in URLS_KV.
  * 2. Returns 404 JSON if not found.
- * 3. Enqueues a ClickEvent to CLICK_QUEUE via ctx.waitUntil() (non-blocking).
+ * 3. POSTs a ClickEvent to analytics-worker /internal/record-click (awaited).
  * 4. Returns a 302 redirect to the stored longUrl.
  *
  * WHY 302 NOT 301:
@@ -13,14 +13,30 @@
  * never cached, so every visit hits the worker and generates a click event.
  * This is the same approach used by Bitly, TinyURL, and every analytics-aware
  * link shortener.
+ *
+ * WHY HTTP CALL TO ANALYTICS-WORKER (NOT DIRECT KV WRITE):
+ * Multiple wrangler dev processes share the same KV SQLite file via WAL mode.
+ * However, SQLite WAL reads are isolated per-process — a write from redirect-
+ * worker's process may not be visible to analytics-worker's process until the
+ * WAL is checkpointed. By calling analytics-worker over HTTP, we ensure the
+ * KV write happens INSIDE the analytics-worker process, which reads from the
+ * same SQLite connection, eliminating the cross-process read-isolation issue.
+ *
+ * In production, this should be replaced with a Cloudflare Service Binding
+ * for zero-latency worker-to-worker calls without going through the network.
  */
 
 import { hashIp } from "./hash";
 
 export interface Env {
   URLS_KV: KVNamespace;
-  ANALYTICS_KV: KVNamespace;
   CLICK_QUEUE: Queue<ClickEvent>;
+  /**
+   * Base URL of analytics-worker.
+   * Local dev:  http://localhost:8791  (set in .dev.vars or wrangler.toml [vars])
+   * Production: set via wrangler secret / env var, or replace with a service binding.
+   */
+  ANALYTICS_WORKER_URL: string;
 }
 
 /** Shape stored as JSON in URLS_KV (written by shorten-worker). */
@@ -30,7 +46,7 @@ interface LinkRecord {
   userId: string;
 }
 
-/** Shape of the message published to the click-events Queue. */
+/** Shape of the message sent to analytics-worker and the click-events Queue. */
 export interface ClickEvent {
   shortCode: string;
   /** ISO 8601 timestamp of when the redirect was served. */
@@ -46,43 +62,6 @@ export interface ClickEvent {
    * Null when the header is absent (e.g. local wrangler dev).
    */
   ipHash: string | null;
-}
-
-// ── KV helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Atomically-unsafe KV increment (same pattern as click-processor-worker).
- * Acceptable for this traffic level — see click-processor-worker comment.
- */
-async function kvIncrement(kv: KVNamespace, key: string): Promise<void> {
-  const raw = await kv.get(key);
-  const current = raw !== null ? parseInt(raw, 10) : 0;
-  await kv.put(key, String(current + 1));
-}
-
-/** Truncates ISO timestamp to YYYY-MM-DDTHH for hourly KV bucket keys. */
-function truncateToHour(iso: string): string {
-  return iso.slice(0, 13);
-}
-
-/**
- * Writes click counters directly to ANALYTICS_KV.
- *
- * WHY DUAL-WRITE (queue + direct KV):
- * In local dev, separate `wrangler dev` processes cannot relay queue messages
- * to each other. The direct KV write makes click counting work locally.
- * In production the queue handles this via click-processor-worker, and both
- * writes succeed independently (KV is idempotent-ish at this traffic level).
- */
-async function writeClickToKv(env: Env, event: ClickEvent): Promise<void> {
-  const { shortCode, timestamp, referer } = event;
-  const hour = truncateToHour(timestamp);
-  const referrerKey = referer && referer.trim() !== "" ? referer : "direct";
-  await Promise.all([
-    kvIncrement(env.ANALYTICS_KV, `total:${shortCode}`),
-    kvIncrement(env.ANALYTICS_KV, `hourly:${shortCode}:${hour}`),
-    kvIncrement(env.ANALYTICS_KV, `referrer:${shortCode}:${referrerKey}`),
-  ]);
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────────
@@ -124,19 +103,20 @@ async function handleRedirect(
 
   // 2. Record the click ─────────────────────────────────────────────────────
   //
-  // IMPORTANT: KV write happens BEFORE the redirect response is returned.
-  // ctx.waitUntil() is unreliable in local `wrangler dev` — the runtime can
-  // terminate the isolate immediately after flushing the HTTP response, before
-  // background promises complete. By awaiting writeClickToKv() here we
-  // guarantee the counter is incremented on every single visit.
+  // The click event is POSTed to analytics-worker's /internal/record-click
+  // endpoint and AWAITED before the redirect response is returned.
   //
-  // Trade-off: the redirect is delayed by ~2-5ms (one round-trip to local KV
-  // SQLite). This is imperceptible to users and acceptable for a portfolio
-  // project. In a high-traffic production service you'd keep waitUntil() and
-  // accept occasional missed counts.
+  // WHY AWAITED (not ctx.waitUntil):
+  //   ctx.waitUntil() is unreliable in local wrangler dev — the runtime can
+  //   terminate the isolate after flushing the HTTP response, before background
+  //   promises complete. Awaiting guarantees the click is recorded on every visit.
   //
-  // The queue.send() is still fire-and-forget (waitUntil) for production —
-  // click-processor-worker handles deduplication and aggregation there.
+  // WHY HTTP (not direct ANALYTICS_KV write):
+  //   See module-level comment. analytics-worker is the sole writer to
+  //   ANALYTICS_KV, avoiding SQLite WAL cross-process read-isolation issues.
+  //
+  // Trade-off: adds ~2-5ms latency per redirect (local SQLite round-trip).
+  // Imperceptible to users. In production, use a Service Binding instead.
   const clickEvent: ClickEvent = {
     shortCode,
     timestamp: new Date().toISOString(),
@@ -145,13 +125,22 @@ async function handleRedirect(
     ipHash: await hashIp(request.headers.get("CF-Connecting-IP")),
   };
 
-  // Synchronous write — guaranteed to complete before response is sent
-  await writeClickToKv(env, clickEvent);
+  const analyticsUrl = (env.ANALYTICS_WORKER_URL ?? "http://localhost:8791").replace(/\/$/, "");
 
-  // Queue send for production click-processor-worker (fire-and-forget)
+  // Synchronous call — analytics-worker writes to its own ANALYTICS_KV
+  await fetch(`${analyticsUrl}/internal/record-click`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(clickEvent),
+  }).catch((err) => {
+    // Log but don't fail the redirect if analytics is down.
+    console.error("[redirect] Failed to record click:", err);
+  });
+
+  // Queue send for production click-processor-worker (fire-and-forget backup)
   ctx.waitUntil(
     env.CLICK_QUEUE.send(clickEvent).catch(() => {
-      // Queue send fails silently in local dev — KV write above covers it.
+      // Queue send fails silently in local dev — HTTP call above covers it.
     })
   );
 
@@ -162,9 +151,7 @@ async function handleRedirect(
     status: 302,
     headers: { Location: record.longUrl },
   });
-
 }
-
 
 // ── Router ─────────────────────────────────────────────────────────────────────
 
