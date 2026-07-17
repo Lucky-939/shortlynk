@@ -13,7 +13,7 @@ import { StatsSkeleton } from "@/components/LoadingSkeleton";
 import CopyButton from "@/components/CopyButton";
 
 const REDIRECT_BASE = process.env.NEXT_PUBLIC_REDIRECT_BASE_URL ?? "";
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 2000; // 2 s — fast enough to feel live
 
 /**
  * StatsClient — reads shortCode from ?code= query param.
@@ -79,15 +79,48 @@ export default function StatsClient() {
     }
   }, [user, shortCode, logout, router]);
 
-  // ── Polling — fetch every 5 s for near-live updates ─────────────────────
+  // ── Polling — fetch every 2 s + restart on tab focus / BFCache restore ──
+  //
+  // Chrome's Back-Forward Cache (BFCache) freezes the page (including all
+  // setInterval timers) when the user navigates away. When they press Back,
+  // the page is restored from BFCache but the interval is still frozen.
+  // We listen for `pageshow` (persisted=true means restored from BFCache) and
+  // `visibilitychange` (tab made visible again) to restart polling and fetch
+  // immediately so the count updates as soon as the user returns.
   useEffect(() => {
     if (!user || !shortCode) return;
-    fetchStats();
-    pollingRef.current = setInterval(fetchStats, POLL_INTERVAL_MS);
+
+    // Start / restart the polling interval and return a cleanup fn.
+    const startPolling = () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      fetchStats(); // immediate fetch on (re)start
+      pollingRef.current = setInterval(fetchStats, POLL_INTERVAL_MS);
+    };
+
+    startPolling();
+
+    // Restart when tab becomes visible again (covers both BFCache restore
+    // and switching between browser tabs).
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") startPolling();
+    };
+
+    // `pageshow` with persisted=true fires specifically when Chrome restores
+    // a page from BFCache (visibilitychange alone may not fire in that case).
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) startPolling();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pageshow", handlePageShow);
+
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pageshow", handlePageShow);
     };
   }, [user, shortCode, fetchStats]);
+
 
   if (authLoading || (!user && !error)) return null;
   if (!shortCode) return null;
