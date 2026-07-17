@@ -42,6 +42,29 @@ function useAnimatedNumber(target: number, duration = 600) {
   return display;
 }
 
+// ── IST timezone helper ──────────────────────────────────────────────────────
+
+/**
+ * Converts a UTC hour key ("YYYY-MM-DDTHH") to a display string in
+ * Indian Standard Time (Asia/Kolkata, UTC+5:30).
+ *
+ * Uses an explicit timeZone rather than the browser's local setting so the
+ * display is consistent for all visitors regardless of their system clock.
+ *
+ * Returns "HH:MM" (24-hour, always 5 chars, e.g. "03:30", "21:00").
+ */
+function utcHourKeyToIST(utcKey: string): string {
+  // Append ":00:00Z" to make a full ISO-8601 UTC datetime string that
+  // Date can parse unambiguously as UTC (without the Z it's local-time).
+  const utcDate = new Date(utcKey + ":00:00Z");
+  return utcDate.toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 // ── Custom tooltip ────────────────────────────────────────────────────────────
 
 function ChartTooltip({
@@ -70,8 +93,9 @@ function HourlyChart({ data }: { data: LinkStats["hourly"] }) {
   // We generate the last 24 UTC hour keys and merge.
   const buckets = Array.from({ length: 24 }, (_, i) => {
     const d = new Date(Date.now() - (23 - i) * 3_600_000);
-    const key = d.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
-    const label = d.toISOString().slice(11, 13) + ":00"; // "HH:00"
+    const key = d.toISOString().slice(0, 13); // "YYYY-MM-DDTHH" (UTC)
+    // Convert the UTC hour key to IST for display — presentation only.
+    const label = utcHourKeyToIST(key); // e.g. "03:30", "21:00"
     const match = data.find((h) => h.hour === key);
     return { key, label, count: match?.count ?? 0 };
   });
@@ -89,10 +113,12 @@ function HourlyChart({ data }: { data: LinkStats["hourly"] }) {
 
   const peak = Math.max(...buckets.map((b) => b.count));
 
-  // X-axis tick formatter — only render every 3rd label (0,3,6…21)
+  // X-axis tick formatter — only render every 3rd IST hour (show labels at
+  // IST hours 0, 3, 6, 9, 12, 15, 18, 21). The label is already in IST
+  // ("HH:MM") so we parse the IST hour directly.
   const tickFormatter = (label: string) => {
-    const hour = parseInt(label.slice(0, 2), 10);
-    return hour % 3 === 0 ? label : "";
+    const istHour = parseInt(label.slice(0, 2), 10);
+    return istHour % 3 === 0 ? label : "";
   };
 
   return (
@@ -263,7 +289,8 @@ export default function StatsClient() {
     (best, h) => (h.count > (best?.count ?? 0) ? h : best),
     null as LinkStats["hourly"][0] | null
   );
-  const peakLabel = peakHour ? peakHour.hour.slice(11) + ":00 UTC" : "—";
+  // Convert peak hour key to IST for display.
+  const peakLabel = peakHour ? utcHourKeyToIST(peakHour.hour) : "—";
   const topReferrer = stats?.topReferrers[0]?.referrer ?? "—";
   const maxReferrerCount = stats?.topReferrers[0]?.count ?? 1;
 
@@ -334,15 +361,16 @@ export default function StatsClient() {
                 }
                 sub="clicks"
               />
-              <StatCard label="Peak hour" value={peakLabel} sub={peakHour ? `${peakHour.count} clicks` : undefined} />
+              <StatCard label="Peak hour (IST)" value={peakLabel} sub={peakHour ? `${peakHour.count} clicks` : undefined} />
               <StatCard label="Top source" value={topReferrer} sub={stats.topReferrers[0] ? `${stats.topReferrers[0].count} clicks` : undefined} />
             </div>
 
             {/* ── Hourly chart ── */}
             <section className="bg-surface border border-border p-6">
               <div className="flex items-center justify-between mb-5">
-                <h2 className="font-display text-base font-semibold text-text">
+                <h2 className="font-display text-base font-semibold text-text flex items-center gap-2">
                   Last 24 hours
+                  <span className="text-xs font-mono text-muted font-normal tracking-normal">(IST)</span>
                 </h2>
                 <span className="text-xs font-mono text-muted">
                   {stats.hourly.reduce((s, h) => s + h.count, 0)} clicks shown
