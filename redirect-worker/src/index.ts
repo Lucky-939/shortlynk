@@ -137,12 +137,11 @@ async function handleRedirect(
     console.error("[redirect] Failed to record click:", err);
   });
 
-  // Queue send for production click-processor-worker (fire-and-forget backup)
-  ctx.waitUntil(
-    env.CLICK_QUEUE.send(clickEvent).catch(() => {
-      // Queue send fails silently in local dev — HTTP call above covers it.
-    })
-  );
+  // Queue send removed: wrangler 4.x local queues now deliver to
+  // click-processor-worker, which would double-count every click (+2 per visit).
+  // The HTTP call to analytics-worker above is the sole, reliable write path.
+  // In production you can re-enable the queue by restoring ctx.waitUntil below.
+  // ctx.waitUntil(env.CLICK_QUEUE.send(clickEvent).catch(() => {}));
 
   // 3. Redirect ───────────────────────────────────────────────────────────────
   //
