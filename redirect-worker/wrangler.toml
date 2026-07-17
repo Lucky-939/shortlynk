@@ -12,6 +12,15 @@ port = 8788
 binding = "URLS_KV"
 id = "f6652bfca0194e119f8d8a95e3f6fd03"
 
+# ANALYTICS_KV is written by this worker directly (via waitUntil) in addition
+# to queueing the click event. This dual-write approach is needed because in
+# local dev, separate wrangler dev processes cannot relay queue messages to
+# each other. The direct KV write ensures click counts work locally; the queue
+# write ensures correct async processing in production.
+[[kv_namespaces]]
+binding = "ANALYTICS_KV"
+id = "c19cebc7bd0b4360aabe425be706b4e3"
+
 # ── Queue Producer ────────────────────────────────────────────────────────────
 [[queues.producers]]
 binding = "CLICK_QUEUE"

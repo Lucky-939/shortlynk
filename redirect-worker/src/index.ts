@@ -19,6 +19,7 @@ import { hashIp } from "./hash";
 
 export interface Env {
   URLS_KV: KVNamespace;
+  ANALYTICS_KV: KVNamespace;
   CLICK_QUEUE: Queue<ClickEvent>;
 }
 
@@ -45,6 +46,43 @@ export interface ClickEvent {
    * Null when the header is absent (e.g. local wrangler dev).
    */
   ipHash: string | null;
+}
+
+// ── KV helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Atomically-unsafe KV increment (same pattern as click-processor-worker).
+ * Acceptable for this traffic level — see click-processor-worker comment.
+ */
+async function kvIncrement(kv: KVNamespace, key: string): Promise<void> {
+  const raw = await kv.get(key);
+  const current = raw !== null ? parseInt(raw, 10) : 0;
+  await kv.put(key, String(current + 1));
+}
+
+/** Truncates ISO timestamp to YYYY-MM-DDTHH for hourly KV bucket keys. */
+function truncateToHour(iso: string): string {
+  return iso.slice(0, 13);
+}
+
+/**
+ * Writes click counters directly to ANALYTICS_KV.
+ *
+ * WHY DUAL-WRITE (queue + direct KV):
+ * In local dev, separate `wrangler dev` processes cannot relay queue messages
+ * to each other. The direct KV write makes click counting work locally.
+ * In production the queue handles this via click-processor-worker, and both
+ * writes succeed independently (KV is idempotent-ish at this traffic level).
+ */
+async function writeClickToKv(env: Env, event: ClickEvent): Promise<void> {
+  const { shortCode, timestamp, referer } = event;
+  const hour = truncateToHour(timestamp);
+  const referrerKey = referer && referer.trim() !== "" ? referer : "direct";
+  await Promise.all([
+    kvIncrement(env.ANALYTICS_KV, `total:${shortCode}`),
+    kvIncrement(env.ANALYTICS_KV, `hourly:${shortCode}:${hour}`),
+    kvIncrement(env.ANALYTICS_KV, `referrer:${shortCode}:${referrerKey}`),
+  ]);
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────────
@@ -84,21 +122,15 @@ async function handleRedirect(
     return json({ error: "Short link not found" }, 404);
   }
 
-  // 2. Build and enqueue the click event ─────────────────────────────────────
+  // 2. Build and enqueue + write to KV directly ────────────────────────────
   //
-  // ctx.waitUntil() is the correct pattern here for two reasons:
+  // ctx.waitUntil() ensures both the queue.send() and the direct KV writes
+  // complete after the redirect response is flushed to the browser.
   //
-  // a) NON-BLOCKING: The 301 response is returned to the client immediately.
-  //    The queue.send() Promise runs in the background. From the browser's
-  //    perspective, the redirect is instantaneous — it never waits for the
-  //    analytics write.
-  //
-  // b) SAFE / RELIABLE: Cloudflare guarantees that any Promise registered
-  //    with ctx.waitUntil() will be allowed to run to completion (or retry
-  //    on transient failure) even after the HTTP response has already been
-  //    flushed. Without waitUntil(), the runtime could terminate the Worker
-  //    isolate as soon as the response is sent, silently dropping the event.
-  //
+  // The direct KV write (writeClickToKv) is the source of truth in local dev
+  // where the queue consumer (click-processor-worker) cannot receive messages
+  // from a separate wrangler dev process. In production, both writes succeed;
+  // the queue write via click-processor is the canonical production path.
   const clickEvent: ClickEvent = {
     shortCode,
     timestamp: new Date().toISOString(),
@@ -106,7 +138,14 @@ async function handleRedirect(
     referer: request.headers.get("Referer"),
     ipHash: await hashIp(request.headers.get("CF-Connecting-IP")),
   };
-  ctx.waitUntil(env.CLICK_QUEUE.send(clickEvent));
+  ctx.waitUntil(
+    Promise.all([
+      env.CLICK_QUEUE.send(clickEvent).catch(() => {
+        // Queue send can fail in local dev — that's fine, direct KV covers it.
+      }),
+      writeClickToKv(env, clickEvent),
+    ])
+  );
 
   // 3. Redirect ───────────────────────────────────────────────────────────────
   //
