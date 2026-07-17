@@ -122,15 +122,21 @@ async function handleRedirect(
     return json({ error: "Short link not found" }, 404);
   }
 
-  // 2. Build and enqueue + write to KV directly ────────────────────────────
+  // 2. Record the click ─────────────────────────────────────────────────────
   //
-  // ctx.waitUntil() ensures both the queue.send() and the direct KV writes
-  // complete after the redirect response is flushed to the browser.
+  // IMPORTANT: KV write happens BEFORE the redirect response is returned.
+  // ctx.waitUntil() is unreliable in local `wrangler dev` — the runtime can
+  // terminate the isolate immediately after flushing the HTTP response, before
+  // background promises complete. By awaiting writeClickToKv() here we
+  // guarantee the counter is incremented on every single visit.
   //
-  // The direct KV write (writeClickToKv) is the source of truth in local dev
-  // where the queue consumer (click-processor-worker) cannot receive messages
-  // from a separate wrangler dev process. In production, both writes succeed;
-  // the queue write via click-processor is the canonical production path.
+  // Trade-off: the redirect is delayed by ~2-5ms (one round-trip to local KV
+  // SQLite). This is imperceptible to users and acceptable for a portfolio
+  // project. In a high-traffic production service you'd keep waitUntil() and
+  // accept occasional missed counts.
+  //
+  // The queue.send() is still fire-and-forget (waitUntil) for production —
+  // click-processor-worker handles deduplication and aggregation there.
   const clickEvent: ClickEvent = {
     shortCode,
     timestamp: new Date().toISOString(),
@@ -138,13 +144,15 @@ async function handleRedirect(
     referer: request.headers.get("Referer"),
     ipHash: await hashIp(request.headers.get("CF-Connecting-IP")),
   };
+
+  // Synchronous write — guaranteed to complete before response is sent
+  await writeClickToKv(env, clickEvent);
+
+  // Queue send for production click-processor-worker (fire-and-forget)
   ctx.waitUntil(
-    Promise.all([
-      env.CLICK_QUEUE.send(clickEvent).catch(() => {
-        // Queue send can fail in local dev — that's fine, direct KV covers it.
-      }),
-      writeClickToKv(env, clickEvent),
-    ])
+    env.CLICK_QUEUE.send(clickEvent).catch(() => {
+      // Queue send fails silently in local dev — KV write above covers it.
+    })
   );
 
   // 3. Redirect ───────────────────────────────────────────────────────────────
@@ -154,7 +162,9 @@ async function handleRedirect(
     status: 302,
     headers: { Location: record.longUrl },
   });
+
 }
+
 
 // ── Router ─────────────────────────────────────────────────────────────────────
 
