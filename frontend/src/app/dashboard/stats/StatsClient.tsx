@@ -3,6 +3,14 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 import { getLinkStats, ApiError, type LinkStats } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import NavBar from "@/components/NavBar";
@@ -34,61 +42,95 @@ function useAnimatedNumber(target: number, duration = 600) {
   return display;
 }
 
-// ── Bar chart with hover tooltips ─────────────────────────────────────────────
+// ── Custom tooltip ────────────────────────────────────────────────────────────
+
+function ChartTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: { value: number; payload: { label: string } }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const { value, payload: { label } } = payload[0];
+  return (
+    <div className="bg-surface border border-border px-3 py-2 pointer-events-none">
+      <p className="font-mono text-xs text-muted mb-0.5">{label}</p>
+      <p className="font-mono text-sm text-accent font-semibold">
+        {value} click{value !== 1 ? "s" : ""}
+      </p>
+    </div>
+  );
+}
+
+// ── Bar chart ─────────────────────────────────────────────────────────────────
 
 function HourlyChart({ data }: { data: LinkStats["hourly"] }) {
-  const [hovered, setHovered] = useState<number | null>(null);
+  // Build a full 24-bucket array. The API only returns hours with > 0 clicks.
+  // We generate the last 24 UTC hour keys and merge.
+  const buckets = Array.from({ length: 24 }, (_, i) => {
+    const d = new Date(Date.now() - (23 - i) * 3_600_000);
+    const key = d.toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
+    const label = d.toISOString().slice(11, 13) + ":00"; // "HH:00"
+    const match = data.find((h) => h.hour === key);
+    return { key, label, count: match?.count ?? 0 };
+  });
 
-  if (data.length === 0) {
+  const totalClicks = buckets.reduce((s, b) => s + b.count, 0);
+
+  // Empty state — all zeros look like a rendering bug
+  if (totalClicks === 0) {
     return (
-      <div className="flex items-center justify-center h-32 text-muted text-sm font-mono">
+      <div className="flex items-center justify-center h-36 text-muted text-sm font-mono">
         No clicks in the last 24 hours
       </div>
     );
   }
 
-  const max = Math.max(...data.map((d) => d.count), 1);
+  const peak = Math.max(...buckets.map((b) => b.count));
+
+  // X-axis tick formatter — only render every 3rd label (0,3,6…21)
+  const tickFormatter = (label: string) => {
+    const hour = parseInt(label.slice(0, 2), 10);
+    return hour % 3 === 0 ? label : "";
+  };
 
   return (
-    <div className="relative">
-      <div className="flex items-end gap-1 h-40 pb-6">
-        {data.map((d, i) => {
-          const heightPct = (d.count / max) * 100;
-          const isHov = hovered === i;
-          // Format hour label: "21:00"
-          const label = d.hour.slice(11) + ":00";
-          return (
-            <div
-              key={d.hour}
-              className="relative flex-1 flex flex-col items-center justify-end h-full group cursor-default"
-              onMouseEnter={() => setHovered(i)}
-              onMouseLeave={() => setHovered(null)}
-            >
-              {/* Tooltip */}
-              {isHov && (
-                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-10 bg-raised border border-border px-2 py-1 text-xs font-mono text-text whitespace-nowrap pointer-events-none">
-                  <span className="text-accent">{d.count}</span>{" "}
-                  <span className="text-muted">click{d.count !== 1 ? "s" : ""}</span>
-                  <div className="text-muted mt-0.5">{label}</div>
-                </div>
-              )}
-              {/* Bar */}
-              <div
-                className="w-full transition-colors duration-150"
-                style={{
-                  height: `${heightPct}%`,
-                  minHeight: "3px",
-                  background: isHov ? "var(--color-accent-h)" : "var(--color-accent)",
-                  opacity: isHov ? 1 : 0.85,
-                }}
-              />
-            </div>
-          );
-        })}
-      </div>
-      {/* X-axis baseline */}
-      <div className="absolute bottom-6 left-0 right-0 h-px bg-border" />
-    </div>
+    <ResponsiveContainer width="100%" height={160}>
+      <BarChart data={buckets} barCategoryGap="20%" margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+        <XAxis
+          dataKey="label"
+          tickFormatter={tickFormatter}
+          tick={{
+            fontFamily: "var(--font-mono, monospace)",
+            fontSize: 11,
+            fill: "var(--color-muted)",
+          }}
+          axisLine={false}
+          tickLine={false}
+          interval={0}
+        />
+        {/* Y-axis intentionally omitted — bar heights speak for themselves */}
+        <Tooltip
+          content={<ChartTooltip />}
+          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+        />
+        <Bar dataKey="count" radius={0} isAnimationActive={false}>
+          {buckets.map((b) => (
+            <Cell
+              key={b.key}
+              fill={
+                b.count === peak && peak > 0
+                  ? "var(--color-accent)"          // peak bar: loud accent
+                  : b.count > 0
+                  ? "rgba(232,255,71,0.35)"        // non-zero: dim accent
+                  : "var(--color-raised)"          // zero: near-invisible
+              }
+            />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
   );
 }
 
