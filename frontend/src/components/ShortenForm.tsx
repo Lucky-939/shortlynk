@@ -60,7 +60,7 @@ export default function ShortenForm({
 
   return (
     <div className="w-full">
-      <form onSubmit={handleSubmit} className="flex gap-0">
+      <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-0">
         <input
           id="shorten-input"
           type="url"
@@ -68,7 +68,7 @@ export default function ShortenForm({
           onChange={(e) => { setUrl(e.target.value); setError(null); setResult(null); }}
           placeholder={placeholder}
           required
-          className="flex-1 bg-surface border border-border border-r-0 px-4 py-3 text-text text-sm font-mono placeholder:text-muted focus:outline-none focus:border-b-2 focus:border-b-accent focus:pb-[11px] transition-all"
+          className="flex-1 bg-surface border border-border sm:border-r-0 px-4 py-3 text-text text-sm font-mono placeholder:text-muted focus:outline-none focus:border-b-2 focus:border-b-accent focus:pb-[11px] transition-all"
           aria-label="Long URL to shorten"
         />
         <button

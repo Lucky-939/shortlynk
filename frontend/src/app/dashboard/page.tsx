@@ -75,7 +75,7 @@ export default function DashboardPage() {
         <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
           <div>
             <h1 className="font-display text-3xl font-semibold text-text mb-1">Your links</h1>
-            <p className="text-muted text-sm">
+            <p className="text-muted text-sm font-mono">
               {user?.email}
             </p>
           </div>

@@ -38,7 +38,7 @@ export default function NavBar() {
             <>
               <Link
                 href="/login"
-                className="text-sm text-muted hover:text-text transition-colors"
+                className="text-sm text-text hover:text-accent transition-colors"
               >
                 Sign in
               </Link>

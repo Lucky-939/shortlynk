@@ -90,19 +90,23 @@ function ChartTooltip({
 
 function HourlyChart({ data }: { data: LinkStats["hourly"] }) {
   // Build a full 24-bucket array. The API only returns hours with > 0 clicks.
-  // We generate the last 24 UTC hour keys and merge.
+  // We generate the last 24 UTC hour keys and merge with API data.
   const buckets = Array.from({ length: 24 }, (_, i) => {
     const d = new Date(Date.now() - (23 - i) * 3_600_000);
     const key = d.toISOString().slice(0, 13); // "YYYY-MM-DDTHH" (UTC)
-    // Convert the UTC hour key to IST for display — presentation only.
-    const label = utcHourKeyToIST(key); // e.g. "03:30", "21:00"
+    const label = utcHourKeyToIST(key);        // "HH:MM" in IST, display only
     const match = data.find((h) => h.hour === key);
     return { key, label, count: match?.count ?? 0 };
   });
 
+  // Debug: log raw API hourly data so we can confirm whether multiple non-zero
+  // buckets are real data or a rendering artifact.
+  // eslint-disable-next-line no-console
+  console.debug("[ShortLynk] hourly API data:", data, "| merged buckets:", buckets.filter(b => b.count > 0));
+
   const totalClicks = buckets.reduce((s, b) => s + b.count, 0);
 
-  // Empty state — all zeros look like a rendering bug
+  // Empty state — rendering 24 zero-height bars looks like a bug to the user
   if (totalClicks === 0) {
     return (
       <div className="flex items-center justify-center h-36 text-muted text-sm font-mono">
@@ -113,12 +117,14 @@ function HourlyChart({ data }: { data: LinkStats["hourly"] }) {
 
   const peak = Math.max(...buckets.map((b) => b.count));
 
-  // X-axis tick formatter — only render every 3rd IST hour (show labels at
-  // IST hours 0, 3, 6, 9, 12, 15, 18, 21). The label is already in IST
-  // ("HH:MM") so we parse the IST hour directly.
+  // X-axis tick formatter:
+  // — Show every 6th IST hour label (0, 6, 12, 18 → "XX:30" in IST).
+  //   This keeps labels readable on narrow mobile widths where every-3rd
+  //   labels crowd together. The :30 suffix is inherent to IST (UTC+5:30).
   const tickFormatter = (label: string) => {
     const istHour = parseInt(label.slice(0, 2), 10);
-    return istHour % 3 === 0 ? label : "";
+    // Show at 0, 6, 12, 18 IST hours (4 labels across 24 h)
+    return istHour % 6 === 0 ? label : "";
   };
 
   return (
@@ -146,12 +152,14 @@ function HourlyChart({ data }: { data: LinkStats["hourly"] }) {
             <Cell
               key={b.key}
               fill={
-                b.count === peak && peak > 0
-                  ? "var(--color-accent)"          // peak bar: loud accent
-                  : b.count > 0
-                  ? "rgba(232,255,71,0.35)"        // non-zero: dim accent
-                  : "var(--color-raised)"          // zero: near-invisible
+                b.count === 0
+                  ? "transparent"               // zero: truly invisible — not just dim
+                  : b.count === peak
+                  ? "var(--color-accent)"        // peak bar: loud accent
+                  : "rgba(232,255,71,0.55)"      // non-zero, non-peak: dim accent
+                                                 // (clearly distinguishable from zero)
               }
+              fillOpacity={b.count === 0 ? 0 : 1}
             />
           ))}
         </Bar>
@@ -344,11 +352,12 @@ export default function StatsClient() {
         ) : stats ? (
           <div className="space-y-6">
 
-            {/* ── Stat cards row ── */}
+            {/* ── Stat cards row — 2x2 on mobile, 4-col on md+ ── */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="bg-surface border border-border border-l-[3px] border-l-accent p-5 col-span-2 md:col-span-1 flex flex-col gap-1">
+              {/* Total clicks — accent-highlighted, equal size to others on mobile */}
+              <div className="bg-surface border border-border border-l-[3px] border-l-accent p-4 sm:p-5 flex flex-col gap-1">
                 <p className="text-xs font-mono text-muted uppercase tracking-widest">Total clicks</p>
-                <p className="font-display text-4xl font-bold text-accent leading-none mt-1">
+                <p className="font-display text-3xl sm:text-4xl font-bold text-accent leading-none mt-1">
                   {animatedTotal.toLocaleString()}
                 </p>
                 <p className="text-xs font-mono text-muted mt-1">all time</p>
@@ -366,17 +375,23 @@ export default function StatsClient() {
             </div>
 
             {/* ── Hourly chart ── */}
-            <section className="bg-surface border border-border p-6">
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="font-display text-base font-semibold text-text flex items-center gap-2">
-                  Last 24 hours
-                  <span className="text-xs font-mono text-muted font-normal tracking-normal">(IST)</span>
-                </h2>
-                <span className="text-xs font-mono text-muted">
+            <section className="bg-surface border border-border p-4 sm:p-6 overflow-hidden">
+              <div className="flex items-start justify-between mb-1 gap-2 flex-wrap">
+                <div>
+                  <h2 className="font-display text-base font-semibold text-text flex items-center gap-2">
+                    Last 24 hours
+                    <span className="text-xs font-mono text-muted font-normal tracking-normal">(IST)</span>
+                  </h2>
+                  {/* IST offset clarification — the :30 labels are not a mistake */}
+                  <p className="text-xs font-mono text-muted mt-0.5">IST = UTC+5:30</p>
+                </div>
+                <span className="text-xs font-mono text-muted self-start">
                   {stats.hourly.reduce((s, h) => s + h.count, 0)} clicks shown
                 </span>
               </div>
-              <HourlyChart data={stats.hourly} />
+              <div className="mt-4">
+                <HourlyChart data={stats.hourly} />
+              </div>
             </section>
 
             {/* ── Top referrers ── */}
