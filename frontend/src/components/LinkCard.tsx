@@ -37,7 +37,7 @@ export default function LinkCard({ link, shortenApiBase }: LinkCardProps) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3 mb-1.5 flex-wrap">
             <Link
-              href={`/dashboard/${link.shortCode}`}
+              href={`/dashboard/stats?code=${link.shortCode}`}
               className="font-mono text-accent font-medium text-base hover:underline underline-offset-2"
             >
               {link.shortCode}
@@ -68,7 +68,7 @@ export default function LinkCard({ link, shortenApiBase }: LinkCardProps) {
       {/* Stats link — visible on hover */}
       <div className="mt-2">
         <Link
-          href={`/dashboard/${link.shortCode}`}
+          href={`/dashboard/stats?code=${link.shortCode}`}
           className="text-xs text-muted hover:text-accent transition-colors"
         >
           View detailed stats →
