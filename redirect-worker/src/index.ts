@@ -146,10 +146,19 @@ async function handleRedirect(
 
   // 3. Redirect ───────────────────────────────────────────────────────────────
   //
-  // 302 (Found / temporary redirect) is intentional — see module comment above.
+  // 302 (Found / temporary redirect) is intentional — see module comment.
+  //
+  // Cache-Control: no-store is required. Without it, Chrome (and other
+  // browsers) cache 302 responses within the same browsing session, so
+  // subsequent visits to the same short URL are served from the browser
+  // cache and never reach this worker — meaning clicks after the first
+  // one per session are silently dropped.
   return new Response(null, {
     status: 302,
-    headers: { Location: record.longUrl },
+    headers: {
+      Location: record.longUrl,
+      "Cache-Control": "no-store",
+    },
   });
 }
 
