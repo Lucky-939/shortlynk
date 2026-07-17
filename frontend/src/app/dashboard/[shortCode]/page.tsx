@@ -1,4 +1,25 @@
+/**
+ * generateStaticParams — required by Next.js `output: 'export'` for every
+ * dynamic route segment.
+ *
+ * We return [] because short codes are created by users at runtime; there are
+ * no paths to pre-render at build time. The page is fully client-side ("use
+ * client") and loads its data via fetch(), so it works correctly when reached
+ * through SPA navigation (clicking a link in the dashboard).
+ *
+ * NOTE — direct URL access (pasting /dashboard/abc123 into the address bar):
+ * In a static export there is no server to render unknown paths. Add a
+ * Cloudflare Pages `public/_redirects` file with:
+ *   /*  /index.html  200
+ * to make the browser receive the SPA shell for any path and let the client
+ * router take over.
+ */
+export function generateStaticParams() {
+  return [];
+}
+
 "use client";
+
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";

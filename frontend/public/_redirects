@@ -1,0 +1,5 @@
+# Cloudflare Pages SPA fallback
+# Any path that doesn't match a static file is served the SPA shell (index.html).
+# Next.js client-side router then takes over and renders the correct page.
+# Without this, pasting /dashboard/abc123 directly into the address bar returns a 404.
+/*    /index.html    200
