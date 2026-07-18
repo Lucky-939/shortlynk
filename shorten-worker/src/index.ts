@@ -12,6 +12,7 @@ import { validateLongUrl, validateAlias } from "./validators";
 import { generateShortCode } from "./shortcode";
 import { verifyJwt } from "../../shared/jwt";
 import { handleOptions, withCors } from "../../shared/cors";
+import { checkRateLimit, hashIp } from "../../shared/rateLimit";
 
 export interface Env {
   URLS_KV: KVNamespace;
@@ -67,14 +68,25 @@ async function extractVerifiedToken(request: Request, secret: string) {
 // ── Handler ────────────────────────────────────────────────────────────────────
 
 async function handleShorten(request: Request, env: Env): Promise<Response> {
-  // 0. Verify JWT ────────────────────────────────────────────────────────────
+  // 0. Rate limiting ─────────────────────────────────────────────────────────
+  const ip = request.headers.get("CF-Connecting-IP");
+  const ipHash = await hashIp(ip);
+  if (ipHash !== null) {
+    // 20 requests per hour per IP.
+    const allowed = await checkRateLimit(env.URLS_KV, `shorten:${ipHash}`, 20, 3600);
+    if (!allowed) {
+      return json({ error: "Too many requests, try again later" }, 429);
+    }
+  }
+
+  // 1. Verify JWT ────────────────────────────────────────────────────────────
   const payload = await extractVerifiedToken(request, env.JWT_SECRET);
   if (!payload) {
     return json({ error: "Missing or invalid Authorization token" }, 401);
   }
   const userId = payload.sub;
 
-  // 1. Parse JSON body ──────────────────────────────────────────────────────
+  // 2. Parse JSON body ──────────────────────────────────────────────────────
   let body: ShortenRequestBody;
   try {
     body = await request.json<ShortenRequestBody>();
@@ -84,7 +96,7 @@ async function handleShorten(request: Request, env: Env): Promise<Response> {
 
   const { longUrl, customAlias } = body;
 
-  // 2. Validate longUrl ─────────────────────────────────────────────────────
+  // 3. Validate longUrl ─────────────────────────────────────────────────────
   if (typeof longUrl !== "string" || longUrl.trim() === "") {
     return json({ error: "Missing required field: longUrl" }, 400);
   }
@@ -93,7 +105,7 @@ async function handleShorten(request: Request, env: Env): Promise<Response> {
     return json({ error: urlResult.error }, 400);
   }
 
-  // 3. Resolve shortCode ────────────────────────────────────────────────────
+  // 4. Resolve shortCode ────────────────────────────────────────────────────
   let shortCode: string;
 
   if (customAlias !== undefined) {
@@ -143,7 +155,7 @@ async function handleShorten(request: Request, env: Env): Promise<Response> {
     shortCode = generated;
   }
 
-  // 4. Persist to URLS_KV ───────────────────────────────────────────────────
+  // 5. Persist to URLS_KV ───────────────────────────────────────────────────
   const createdAt = new Date().toISOString();
   const record: LinkRecord = {
     longUrl,
@@ -152,7 +164,7 @@ async function handleShorten(request: Request, env: Env): Promise<Response> {
   };
   await env.URLS_KV.put(shortCode, JSON.stringify(record));
 
-  // 5. Update per-user link index ───────────────────────────────────────────
+  // 6. Update per-user link index ───────────────────────────────────────────
   //
   // We maintain a secondary index `user-links:{userId}` in URLS_KV so that
   // analytics-worker can cheaply retrieve all shortCodes belonging to a user
@@ -171,7 +183,7 @@ async function handleShorten(request: Request, env: Env): Promise<Response> {
   linkIndex.push(shortCode);
   await env.URLS_KV.put(indexKey, JSON.stringify(linkIndex));
 
-  // 6. Build shortUrl using API_BASE_URL ────────────────────────────────────
+  // 7. Build shortUrl using API_BASE_URL ────────────────────────────────────
   // API_BASE_URL should be the public URL of the redirect-worker.
   const baseUrl = env.API_BASE_URL || "http://localhost:8788";
   const shortUrl = `${baseUrl}/${shortCode}`;

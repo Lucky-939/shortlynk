@@ -61,9 +61,10 @@ beforeAll(async () => {
 
 // ── Request helpers ───────────────────────────────────────────────────────────
 
-function makeRequest(body: unknown, token?: string): Request {
+function makeRequest(body: unknown, token?: string, ip?: string): Request {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (ip) headers["CF-Connecting-IP"] = ip;
   return new Request("http://localhost/shorten", {
     method: "POST",
     headers,
@@ -71,16 +72,16 @@ function makeRequest(body: unknown, token?: string): Request {
   });
 }
 
-async function callWorker(body: unknown, kv: KVNamespace, token?: string) {
-  const req = makeRequest(body, token);
-  const env = { URLS_KV: kv, JWT_SECRET: TEST_SECRET };
+async function callWorker(body: unknown, kv: KVNamespace, token?: string, ip?: string) {
+  const req = makeRequest(body, token, ip);
+  const env = { URLS_KV: kv, JWT_SECRET: TEST_SECRET, API_BASE_URL: "http://localhost:8788" };
   const ctx = {} as ExecutionContext;
   return worker.fetch(req, env, ctx);
 }
 
 // Shorthand for authed calls (all normal success/failure tests)
-async function authedCall(body: unknown, kv: KVNamespace) {
-  return callWorker(body, kv, validToken);
+async function authedCall(body: unknown, kv: KVNamespace, ip?: string) {
+  return callWorker(body, kv, validToken, ip);
 }
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
@@ -358,3 +359,51 @@ describe("POST /shorten — collision retry", () => {
     expect(getCount.n).toBe(5);
   });
 });
+
+describe("Rate Limiting", () => {
+  let kv: KVNamespace & { _store: Map<string, string> };
+
+  beforeEach(() => {
+    kv = createMockKV();
+  });
+
+  it("skips rate limiting if CF-Connecting-IP is absent", async () => {
+    // 21 requests with NO ip header
+    for (let i = 0; i < 21; i++) {
+      const res = await authedCall({ longUrl: "https://example.com" }, kv);
+      expect(res.status).not.toBe(429);
+    }
+  });
+
+  it("limits an IP to 20 requests per hour", async () => {
+    const ip = "1.2.3.4";
+    // 20 requests should succeed
+    for (let i = 0; i < 20; i++) {
+      const res = await authedCall({ longUrl: "https://example.com" }, kv, ip);
+      expect(res.status).toBe(201); // Assuming 201 for valid shorten request
+    }
+
+    // 21st request should be rate limited
+    const res21 = await authedCall({ longUrl: "https://example.com" }, kv, ip);
+    expect(res21.status).toBe(429);
+    const body = await res21.json() as { error: string };
+    expect(body.error).toBe("Too many requests, try again later");
+  });
+
+  it("tracks different IPs independently", async () => {
+    const ip1 = "10.0.0.1";
+    const ip2 = "10.0.0.2";
+
+    // Exhaust ip1's limit
+    for (let i = 0; i < 20; i++) {
+      await authedCall({ longUrl: "https://example.com" }, kv, ip1);
+    }
+    const resLimitIp1 = await authedCall({ longUrl: "https://example.com" }, kv, ip1);
+    expect(resLimitIp1.status).toBe(429);
+
+    // ip2 should still be allowed
+    const resIp2 = await authedCall({ longUrl: "https://example.com" }, kv, ip2);
+    expect(resIp2.status).toBe(201);
+  });
+});
+

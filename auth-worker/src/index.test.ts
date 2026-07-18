@@ -49,10 +49,12 @@ function makeEnv(kv: KVNamespace) {
   };
 }
 
-async function post(path: string, body: unknown, kv: KVNamespace) {
+async function post(path: string, body: unknown, kv: KVNamespace, ip?: string) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (ip) headers["CF-Connecting-IP"] = ip;
   const req = new Request(`http://localhost${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
   return worker.fetch(req, makeEnv(kv), {} as ExecutionContext);
@@ -196,3 +198,64 @@ describe("POST /login — unknown email returns the SAME generic 401", () => {
     expect(body.error).toBe("Invalid credentials");
   });
 });
+
+describe("Rate Limiting", () => {
+  let kv: ReturnType<typeof createMockKV>;
+
+  beforeEach(() => {
+    kv = createMockKV();
+  });
+
+  it("skips rate limiting if CF-Connecting-IP is absent", async () => {
+    // 11 requests with NO ip header
+    for (let i = 0; i < 11; i++) {
+      const res = await post("/signup", { email: `test${i}@example.com`, password: "password!" }, kv);
+      expect(res.status).not.toBe(429);
+    }
+  });
+
+  it("limits an IP to 10 requests per hour for /signup", async () => {
+    const ip = "1.2.3.4";
+    // 10 requests should succeed
+    for (let i = 0; i < 10; i++) {
+      const res = await post("/signup", { email: `test${i}@example.com`, password: "password!" }, kv, ip);
+      expect(res.status).toBe(201);
+    }
+
+    // 11th request should be rate limited
+    const res11 = await post("/signup", { email: "test11@example.com", password: "password!" }, kv, ip);
+    expect(res11.status).toBe(429);
+    const body = await res11.json() as { error: string };
+    expect(body.error).toBe("Too many requests, try again later");
+  }, 10_000);
+
+  it("limits an IP to 10 requests per hour for /login", async () => {
+    const ip = "1.2.3.4";
+    // 10 requests should succeed (they will 401 because the user doesn't exist, but NOT 429)
+    for (let i = 0; i < 10; i++) {
+      const res = await post("/login", { email: "ghost@example.com", password: "password!" }, kv, ip);
+      expect(res.status).not.toBe(429);
+    }
+
+    // 11th request should be rate limited
+    const res11 = await post("/login", { email: "ghost@example.com", password: "password!" }, kv, ip);
+    expect(res11.status).toBe(429);
+  }, 10_000);
+
+  it("tracks different IPs independently", async () => {
+    const ip1 = "10.0.0.1";
+    const ip2 = "10.0.0.2";
+
+    // Exhaust ip1's limit
+    for (let i = 0; i < 10; i++) {
+      await post("/signup", { email: `test${i}@example.com`, password: "password!" }, kv, ip1);
+    }
+    const resLimitIp1 = await post("/signup", { email: "test11@example.com", password: "password!" }, kv, ip1);
+    expect(resLimitIp1.status).toBe(429);
+
+    // ip2 should still be allowed
+    const resIp2 = await post("/signup", { email: "testip2@example.com", password: "password!" }, kv, ip2);
+    expect(resIp2.status).toBe(201);
+  }, 10_000);
+});
+

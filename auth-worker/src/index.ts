@@ -13,6 +13,7 @@
 import { hashPassword, verifyPassword } from "../../shared/password";
 import { signJwt } from "../../shared/jwt";
 import { handleOptions, withCors } from "../../shared/cors";
+import { checkRateLimit, hashIp } from "../../shared/rateLimit";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,17 @@ function json(body: unknown, status: number): Response {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 async function handleSignup(request: Request, env: Env): Promise<Response> {
+  // 0. Rate limiting ─────────────────────────────────────────────────────────
+  const ip = request.headers.get("CF-Connecting-IP");
+  const ipHash = await hashIp(ip);
+  if (ipHash !== null) {
+    // 10 requests per hour per IP.
+    const allowed = await checkRateLimit(env.USERS_KV, `auth_signup:${ipHash}`, 10, 3600);
+    if (!allowed) {
+      return json({ error: "Too many requests, try again later" }, 429);
+    }
+  }
+
   // 1. Parse body ─────────────────────────────────────────────────────────────
   let body: { email?: unknown; password?: unknown };
   try {
@@ -99,6 +111,17 @@ async function handleSignup(request: Request, env: Env): Promise<Response> {
 }
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
+  // 0. Rate limiting ─────────────────────────────────────────────────────────
+  const ip = request.headers.get("CF-Connecting-IP");
+  const ipHash = await hashIp(ip);
+  if (ipHash !== null) {
+    // 10 requests per hour per IP.
+    const allowed = await checkRateLimit(env.USERS_KV, `auth_login:${ipHash}`, 10, 3600);
+    if (!allowed) {
+      return json({ error: "Too many requests, try again later" }, 429);
+    }
+  }
+
   // 1. Parse body ─────────────────────────────────────────────────────────────
   let body: { email?: unknown; password?: unknown };
   try {
