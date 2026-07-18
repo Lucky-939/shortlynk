@@ -213,13 +213,18 @@ function StatCard({
 }) {
   return (
     <div
-      className={`bg-surface border border-border p-5 flex flex-col gap-1 ${
+      className={`bg-surface border border-border p-5 flex flex-col gap-1 min-w-0 ${
         accent ? "border-l-[3px] border-l-accent" : ""
       }`}
     >
       <p className="text-xs font-mono text-muted uppercase tracking-widest">{label}</p>
-      <p className="font-display text-3xl font-bold text-text leading-none mt-1">{value}</p>
-      {sub && <p className="text-xs font-mono text-muted mt-1">{sub}</p>}
+      <p 
+        className="font-display text-3xl font-bold text-text leading-none mt-1 truncate"
+        title={String(value)}
+      >
+        {value}
+      </p>
+      {sub && <p className="text-xs font-mono text-muted mt-1 truncate" title={sub}>{sub}</p>}
     </div>
   );
 }
