@@ -1,0 +1,130 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Test ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package:
+          - shared
+          - auth-worker
+          - shorten-worker
+          - redirect-worker
+          - click-processor-worker
+          - analytics-worker
+      fail-fast: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ matrix.package }}
+      - name: Run vitest
+        run: npm test
+        working-directory: ${{ matrix.package }}
+
+  deploy:
+    name: Deploy to Cloudflare
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+      
+      # Deploy auth-worker
+      - name: Install auth-worker deps
+        run: npm ci
+        working-directory: auth-worker
+      - name: Deploy auth-worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: auth-worker
+
+      # Deploy shorten-worker
+      - name: Install shorten-worker deps
+        run: npm ci
+        working-directory: shorten-worker
+      - name: Deploy shorten-worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: shorten-worker
+
+      # Deploy redirect-worker
+      - name: Install redirect-worker deps
+        run: npm ci
+        working-directory: redirect-worker
+      - name: Deploy redirect-worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: redirect-worker
+
+      # Deploy click-processor-worker
+      - name: Install click-processor-worker deps
+        run: npm ci
+        working-directory: click-processor-worker
+      - name: Deploy click-processor-worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: click-processor-worker
+
+      # Deploy analytics-worker
+      - name: Install analytics-worker deps
+        run: npm ci
+        working-directory: analytics-worker
+      - name: Deploy analytics-worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: analytics-worker
+
+      # Deploy frontend
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: frontend
+      - name: Build frontend
+        run: npm run build
+        working-directory: frontend
+      - name: Deploy frontend
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy out --project-name shortlynk
+          workingDirectory: frontend
+
+      - name: Deployment Summary
+        run: |
+          echo "### Deployment Successful! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "The following components were deployed:" >> $GITHUB_STEP_SUMMARY
+          echo "- **auth-worker**" >> $GITHUB_STEP_SUMMARY
+          echo "- **shorten-worker**" >> $GITHUB_STEP_SUMMARY
+          echo "- **redirect-worker**" >> $GITHUB_STEP_SUMMARY
+          echo "- **click-processor-worker**" >> $GITHUB_STEP_SUMMARY
+          echo "- **analytics-worker**" >> $GITHUB_STEP_SUMMARY
+          echo "- **frontend** (Cloudflare Pages)" >> $GITHUB_STEP_SUMMARY
