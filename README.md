@@ -134,11 +134,33 @@ wrangler secret put MY_SECRET
 
 ---
 
-## Deployment (coming soon)
+## CI/CD Pipeline
 
-- Workers: `wrangler deploy` (from each worker directory)
-- Frontend: push to GitHub → Cloudflare Pages auto-deploys from `out/`
-- KV namespaces and Queues will be provisioned in a future step
+ShortLynk uses GitHub Actions to automate testing and deployment. The workflows are defined in `.github/workflows/`.
+
+### Workflows
+
+- **CI (`ci.yml`)**: Triggers on every Pull Request. Runs the full `vitest` suite for all 5 workers + the `shared` library in an isolated matrix job. It also builds the Next.js frontend to verify that static export succeeds. It **fails fast** if any component breaks, and does *not* deploy any code.
+- **Deploy (`deploy.yml`)**: Triggers on pushes to the `main` branch. It first runs the exact same test matrix to prevent deploying broken code. If all tests pass, it uses `cloudflare/wrangler-action` to deploy all 5 workers and the frontend automatically.
+
+### GitHub Repository Secrets
+
+To enable automatic deployments, you must configure the following **Repository Secrets** in your GitHub repository (`Settings -> Secrets and variables -> Actions`):
+
+1. **`CLOUDFLARE_ACCOUNT_ID`**
+   - Your Cloudflare Account ID.
+   - **Where to find it**: Visible in the right-hand sidebar on the Cloudflare dashboard under any Workers & Pages overview.
+2. **`CLOUDFLARE_API_TOKEN`**
+   - The API token used to authenticate deployments.
+   - **Where to find it**: Cloudflare Dashboard → My Profile → API Tokens.
+   - **Required Scopes**: Create a Custom Token with the following minimum permissions (this keeps it scoped down securely, without needing full account access):
+     - `Account` | `Workers Scripts` | `Edit`
+     - `Account` | `Cloudflare Pages` | `Edit`
+     - `Account` | `Account Settings` | `Read`
+
+---
+
+## Deployment
 
 ---
 
