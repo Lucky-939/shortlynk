@@ -12,6 +12,7 @@
 
 import { hashPassword, verifyPassword } from "../../shared/password";
 import { signJwt } from "../../shared/jwt";
+import { handleOptions, withCors } from "../../shared/cors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,35 +37,7 @@ interface UserRecord {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
 
-// ── CORS ──────────────────────────────────────────────────────────────────────
-//
-// The frontend (Next.js on localhost:3000 or the deployed Pages URL) is a
-// different origin from the worker. Browsers block cross-origin fetch() unless
-// the server returns the correct Access-Control-* headers on both the preflight
-// OPTIONS request and the actual response.
-//
-// We use `*` for Allow-Origin here because this is a public auth API — the
-// secrets are all server-side (JWT_SECRET, password hashes). In production you
-// can tighten this to the specific Pages domain via an env var if desired.
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Max-Age": "86400",
-};
-
-/** Attaches CORS headers to an existing Response. */
-function withCors(response: Response): Response {
-  const next = new Response(response.body, response);
-  Object.entries(CORS_HEADERS).forEach(([k, v]) => next.headers.set(k, v));
-  return next;
-}
-
-/** 204 response for browser OPTIONS preflight requests. */
-function handleOptions(): Response {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
-}
+// ── CORS is now managed by shared/cors.ts ───────────────────────────────────
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 

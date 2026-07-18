@@ -3,7 +3,7 @@
  *
  * 1. Looks up shortCode in URLS_KV.
  * 2. Returns 404 JSON if not found.
- * 3. POSTs a ClickEvent to analytics-worker /internal/record-click (awaited).
+ * 3. Dispatches a ClickEvent to the click-events queue.
  * 4. Returns a 302 redirect to the stored longUrl.
  *
  * WHY 302 NOT 301:
@@ -13,17 +13,6 @@
  * never cached, so every visit hits the worker and generates a click event.
  * This is the same approach used by Bitly, TinyURL, and every analytics-aware
  * link shortener.
- *
- * WHY HTTP CALL TO ANALYTICS-WORKER (NOT DIRECT KV WRITE):
- * Multiple wrangler dev processes share the same KV SQLite file via WAL mode.
- * However, SQLite WAL reads are isolated per-process — a write from redirect-
- * worker's process may not be visible to analytics-worker's process until the
- * WAL is checkpointed. By calling analytics-worker over HTTP, we ensure the
- * KV write happens INSIDE the analytics-worker process, which reads from the
- * same SQLite connection, eliminating the cross-process read-isolation issue.
- *
- * In production, this should be replaced with a Cloudflare Service Binding
- * for zero-latency worker-to-worker calls without going through the network.
  */
 
 import { hashIp } from "./hash";
@@ -31,12 +20,6 @@ import { hashIp } from "./hash";
 export interface Env {
   URLS_KV: KVNamespace;
   CLICK_QUEUE: Queue<ClickEvent>;
-  /**
-   * Base URL of analytics-worker.
-   * Local dev:  http://localhost:8791  (set in .dev.vars or wrangler.toml [vars])
-   * Production: set via wrangler secret / env var, or replace with a service binding.
-   */
-  ANALYTICS_WORKER_URL: string;
 }
 
 /** Shape stored as JSON in URLS_KV (written by shorten-worker). */
@@ -103,20 +86,9 @@ async function handleRedirect(
 
   // 2. Record the click ─────────────────────────────────────────────────────
   //
-  // The click event is POSTed to analytics-worker's /internal/record-click
-  // endpoint and AWAITED before the redirect response is returned.
-  //
-  // WHY AWAITED (not ctx.waitUntil):
-  //   ctx.waitUntil() is unreliable in local wrangler dev — the runtime can
-  //   terminate the isolate after flushing the HTTP response, before background
-  //   promises complete. Awaiting guarantees the click is recorded on every visit.
-  //
-  // WHY HTTP (not direct ANALYTICS_KV write):
-  //   See module-level comment. analytics-worker is the sole writer to
-  //   ANALYTICS_KV, avoiding SQLite WAL cross-process read-isolation issues.
-  //
-  // Trade-off: adds ~2-5ms latency per redirect (local SQLite round-trip).
-  // Imperceptible to users. In production, use a Service Binding instead.
+  // We fire a ClickEvent into the queue via ctx.waitUntil. This allows the
+  // redirect to complete in ~10ms (just KV read) without waiting for the
+  // downstream analytics write to finish.
   const clickEvent: ClickEvent = {
     shortCode,
     timestamp: new Date().toISOString(),
@@ -125,23 +97,11 @@ async function handleRedirect(
     ipHash: await hashIp(request.headers.get("CF-Connecting-IP")),
   };
 
-  const analyticsUrl = (env.ANALYTICS_WORKER_URL ?? "http://localhost:8791").replace(/\/$/, "");
-
-  // Synchronous call — analytics-worker writes to its own ANALYTICS_KV
-  await fetch(`${analyticsUrl}/internal/record-click`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(clickEvent),
-  }).catch((err) => {
-    // Log but don't fail the redirect if analytics is down.
-    console.error("[redirect] Failed to record click:", err);
-  });
-
-  // Queue send removed: wrangler 4.x local queues now deliver to
-  // click-processor-worker, which would double-count every click (+2 per visit).
-  // The HTTP call to analytics-worker above is the sole, reliable write path.
-  // In production you can re-enable the queue by restoring ctx.waitUntil below.
-  // ctx.waitUntil(env.CLICK_QUEUE.send(clickEvent).catch(() => {}));
+  // Fire-and-forget to the queue. catch() ensures a queue outage doesn't
+  // crash the worker or break the redirect.
+  ctx.waitUntil(env.CLICK_QUEUE.send(clickEvent).catch((err) => {
+    console.error("[redirect] Failed to queue click event:", err);
+  }));
 
   // 3. Redirect ───────────────────────────────────────────────────────────────
   //

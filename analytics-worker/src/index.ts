@@ -1,12 +1,8 @@
 /**
- * analytics-worker — GET /links, GET /links/{shortCode}/stats,
- *                      POST /internal/record-click
+ * analytics-worker — GET /links, GET /links/{shortCode}/stats
  *
  * Read-only analytics API for the frontend. Protected by JWT.
- * Also accepts internal click events from redirect-worker via HTTP —
- * analytics-worker is the SOLE writer to ANALYTICS_KV, which avoids
- * cross-process SQLite WAL read-isolation issues that arise when two
- * separate wrangler dev processes share the same KV namespace file.
+ * Reads from URLS_KV and ANALYTICS_KV.
  *
  * JWT_SECRET must match auth-worker and shorten-worker. Provided as a
  * Wrangler secret (not a plain var). For local dev, add to .dev.vars.
@@ -14,6 +10,7 @@
  */
 
 import { verifyJwt } from "../../shared/jwt";
+import { handleOptions, withCors } from "../../shared/cors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,33 +27,7 @@ interface LinkRecord {
   userId: string;
 }
 
-/** Shape of click events posted by redirect-worker. */
-interface ClickEvent {
-  shortCode: string;
-  timestamp: string;
-  userAgent: string | null;
-  referer: string | null;
-  ipHash: string | null;
-}
-
-// ── CORS ──────────────────────────────────────────────────────────────────────
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Max-Age": "86400",
-};
-
-function withCors(response: Response): Response {
-  const next = new Response(response.body, response);
-  Object.entries(CORS_HEADERS).forEach(([k, v]) => next.headers.set(k, v));
-  return next;
-}
-
-function handleOptions(): Response {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
-}
+// ── CORS is now managed by shared/cors.ts ───────────────────────────────────
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
@@ -71,18 +42,6 @@ function json(body: unknown, status: number): Response {
 async function getCounter(kv: KVNamespace, key: string): Promise<number> {
   const raw = await kv.get(key);
   return raw !== null ? parseInt(raw, 10) : 0;
-}
-
-/** Increments a KV counter by 1. Read-modify-write (see click-processor comments). */
-async function kvIncrement(kv: KVNamespace, key: string): Promise<void> {
-  const raw = await kv.get(key);
-  const current = raw !== null ? parseInt(raw, 10) : 0;
-  await kv.put(key, String(current + 1));
-}
-
-/** Truncates ISO timestamp to YYYY-MM-DDTHH for hourly bucket keys. */
-function truncateToHour(iso: string): string {
-  return iso.slice(0, 13);
 }
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
@@ -264,27 +223,6 @@ export default {
     const { pathname } = url;
 
     if (request.method === "OPTIONS") return handleOptions();
-
-    // POST /internal/record-click — called by redirect-worker to record a click.
-    // No auth: this is an internal endpoint, not exposed to the public.
-    // In production, replace with a Cloudflare Service Binding.
-    if (request.method === "POST" && pathname === "/internal/record-click") {
-      try {
-        const event = await request.json() as ClickEvent;
-        const { shortCode, timestamp, referer } = event;
-        const hour = truncateToHour(timestamp);
-        const referrerKey = referer && referer.trim() !== "" ? referer : "direct";
-        await Promise.all([
-          kvIncrement(env.ANALYTICS_KV, `total:${shortCode}`),
-          kvIncrement(env.ANALYTICS_KV, `hourly:${shortCode}:${hour}`),
-          kvIncrement(env.ANALYTICS_KV, `referrer:${shortCode}:${referrerKey}`),
-        ]);
-        return withCors(json({ ok: true }, 200));
-      } catch (err) {
-        console.error("[analytics] record-click failed:", err);
-        return withCors(json({ error: "Failed to record click" }, 500));
-      }
-    }
 
     if (request.method !== "GET") {
       return withCors(json({ error: "Method not allowed" }, 405));

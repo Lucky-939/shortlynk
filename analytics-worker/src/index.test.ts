@@ -77,6 +77,22 @@ function linkRecord(shortCode: string, userId: string, longUrl = "https://exampl
   });
 }
 
+// ── CORS ──────────────────────────────────────────────────────────────────────
+
+describe("CORS", () => {
+  it("OPTIONS returns 204 with CORS headers", async () => {
+    const req = new Request("http://localhost/links", { method: "OPTIONS" });
+    const res = await worker.fetch(req, makeEnv({}, {}), {} as ExecutionContext);
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+
+  it("GET returns Access-Control-Allow-Origin", async () => {
+    const res = await get("/links", null, makeEnv({}, {}));
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+});
+
 // ── GET /links ────────────────────────────────────────────────────────────────
 
 describe("GET /links — no auth", () => {

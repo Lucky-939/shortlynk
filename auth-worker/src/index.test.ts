@@ -58,6 +58,22 @@ async function post(path: string, body: unknown, kv: KVNamespace) {
   return worker.fetch(req, makeEnv(kv), {} as ExecutionContext);
 }
 
+// ── CORS ──────────────────────────────────────────────────────────────────────
+
+describe("CORS", () => {
+  it("OPTIONS returns 204 with CORS headers", async () => {
+    const req = new Request("http://localhost/signup", { method: "OPTIONS" });
+    const res = await worker.fetch(req, makeEnv(createMockKV()), {} as ExecutionContext);
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+
+  it("POST returns Access-Control-Allow-Origin", async () => {
+    const res = await post("/signup", {}, createMockKV());
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+});
+
 // ── POST /signup ──────────────────────────────────────────────────────────────
 
 describe("POST /signup — success", () => {

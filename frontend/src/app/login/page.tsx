@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { login as apiLogin, ApiError } from "@/lib/api";
 import { useAuth } from "@/components/AuthProvider";
 import NavBar from "@/components/NavBar";
 
-export default function LoginPage() {
+function LoginClient() {
   const router = useRouter();
   const params = useSearchParams();
   const { login } = useAuth();
@@ -46,7 +46,6 @@ export default function LoginPage() {
 
   return (
     <>
-      <NavBar />
       <main className="max-w-sm mx-auto px-4 pt-20">
         {redirectMessage && (
           <div className="border-l-[3px] border-l-accent bg-surface pl-4 pr-4 py-3 mb-8 text-sm text-text">
@@ -110,6 +109,17 @@ export default function LoginPage() {
           </button>
         </form>
       </main>
+    </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <>
+      <NavBar />
+      <Suspense>
+        <LoginClient />
+      </Suspense>
     </>
   );
 }

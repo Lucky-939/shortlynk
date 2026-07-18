@@ -10,3 +10,8 @@ port = 8787
 [[kv_namespaces]]
 binding = "URLS_KV"
 id = "f6652bfca0194e119f8d8a95e3f6fd03"
+
+[vars]
+# In production, set this to the deployed URL of redirect-worker via:
+# wrangler secret put API_BASE_URL or in the production wrangler.toml
+API_BASE_URL = "https://redirect-worker.lucky-shortlynk.workers.dev"

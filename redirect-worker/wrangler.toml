@@ -6,19 +6,8 @@ compatibility_flags = []
 [dev]
 port = 8788
 
-# ── Plain vars ────────────────────────────────────────────────────────────────
-# ANALYTICS_WORKER_URL is the base URL of analytics-worker.
-# Local dev: http://localhost:8791 (set here so wrangler picks it up automatically).
-# Production: override via `wrangler secret put ANALYTICS_WORKER_URL` or set in
-#             the Cloudflare dashboard, OR replace with a Service Binding.
-[vars]
-ANALYTICS_WORKER_URL = "http://localhost:8791"
-
 # ── KV Bindings ───────────────────────────────────────────────────────────────
 # URLS_KV: read-only by convention — only shorten-worker writes to it.
-# ANALYTICS_KV is intentionally NOT bound here. analytics-worker is the sole
-# writer to ANALYTICS_KV; redirect-worker calls it via HTTP instead of writing
-# directly, which avoids SQLite WAL cross-process read-isolation issues in local dev.
 [[kv_namespaces]]
 binding = "URLS_KV"
 id = "f6652bfca0194e119f8d8a95e3f6fd03"

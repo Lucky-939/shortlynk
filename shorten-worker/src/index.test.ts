@@ -83,6 +83,22 @@ async function authedCall(body: unknown, kv: KVNamespace) {
   return callWorker(body, kv, validToken);
 }
 
+// ── CORS ──────────────────────────────────────────────────────────────────────
+
+describe("CORS", () => {
+  it("OPTIONS returns 204 with CORS headers", async () => {
+    const req = new Request("http://localhost/shorten", { method: "OPTIONS" });
+    const res = await worker.fetch(req, { URLS_KV: createMockKV(), JWT_SECRET: TEST_SECRET, API_BASE_URL: "http://localhost:8788" }, {} as ExecutionContext);
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+
+  it("POST returns Access-Control-Allow-Origin", async () => {
+    const res = await callWorker({}, createMockKV());
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+});
+
 // ── Unit tests: validators ───────────────────────────────────────────────────
 
 describe("validateLongUrl()", () => {

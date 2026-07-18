@@ -67,7 +67,7 @@ async function callWorker(
   kv: KVNamespace,
   queue: Queue<ClickEvent>
 ) {
-  const env = { URLS_KV: kv, CLICK_QUEUE: queue, ANALYTICS_WORKER_URL: "http://localhost:8791" };
+  const env = { URLS_KV: kv, CLICK_QUEUE: queue };
   const ctx = createMockContext();
   const res = await worker.fetch(req, env, ctx);
   // Flush background work registered with waitUntil before we assert
@@ -130,9 +130,9 @@ describe("GET /{shortCode} — found", () => {
     queue = createMockQueue();
   });
 
-  it("returns HTTP 301", async () => {
+  it("returns HTTP 302", async () => {
     const { res } = await callWorker(makeRequest("abc1234"), kv, queue);
-    expect(res.status).toBe(301);
+    expect(res.status).toBe(302);
   });
 
   it("sets Location header to the stored longUrl", async () => {
@@ -221,7 +221,7 @@ describe("GET /{shortCode} — found", () => {
   });
 
   it("queue send happens via ctx.waitUntil (non-blocking)", async () => {
-    const env = { URLS_KV: kv, CLICK_QUEUE: queue, ANALYTICS_WORKER_URL: "http://localhost:8791" };
+    const env = { URLS_KV: kv, CLICK_QUEUE: queue };
     const ctx = createMockContext();
     // Call without flushing waitUntil to confirm it was registered
     await worker.fetch(makeRequest("abc1234"), env, ctx);

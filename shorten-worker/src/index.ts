@@ -11,10 +11,12 @@
 import { validateLongUrl, validateAlias } from "./validators";
 import { generateShortCode } from "./shortcode";
 import { verifyJwt } from "../../shared/jwt";
+import { handleOptions, withCors } from "../../shared/cors";
 
 export interface Env {
   URLS_KV: KVNamespace;
   JWT_SECRET: string;
+  API_BASE_URL: string;
 }
 
 /** Shape stored as a JSON string value in URLS_KV. */
@@ -35,24 +37,7 @@ const MAX_COLLISION_RETRIES = 5;
 
 // ── Utility ────────────────────────────────────────────────────────────────────
 
-// ── CORS ──────────────────────────────────────────────────────────────────────
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Max-Age": "86400",
-};
-
-function withCors(response: Response): Response {
-  const next = new Response(response.body, response);
-  Object.entries(CORS_HEADERS).forEach(([k, v]) => next.headers.set(k, v));
-  return next;
-}
-
-function handleOptions(): Response {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
-}
+// ── CORS is now managed by shared/cors.ts ───────────────────────────────────
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
@@ -186,12 +171,10 @@ async function handleShorten(request: Request, env: Env): Promise<Response> {
   linkIndex.push(shortCode);
   await env.URLS_KV.put(indexKey, JSON.stringify(linkIndex));
 
-  // 6. Build shortUrl from the request's own origin ─────────────────────────
-  // Workers naturally receive the deployed origin in request.url, so this
-  // will produce the correct public URL without any extra config once deployed.
-  // In local dev, the origin will be http://127.0.0.1:8787.
-  const origin = new URL(request.url).origin;
-  const shortUrl = `${origin}/${shortCode}`;
+  // 6. Build shortUrl using API_BASE_URL ────────────────────────────────────
+  // API_BASE_URL should be the public URL of the redirect-worker.
+  const baseUrl = env.API_BASE_URL || "http://localhost:8788";
+  const shortUrl = `${baseUrl}/${shortCode}`;
 
   return json({ shortUrl, shortCode, longUrl, createdAt }, 201);
 }
