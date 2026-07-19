@@ -1,11 +1,39 @@
-# ShortLynk
+# 🔗 ShortLynk — Edge-Native Serverless URL Shortener
 
-A production-shaped, serverless URL shortener built entirely on Cloudflare's
-edge platform — Workers, KV, Queues, and Pages. No servers, no containers,
-no idle cost. Every request is handled at the edge, in one of Cloudflare's
-300+ data centers, close to whoever's clicking.
+> A URL shortener built to prove out a real distributed-systems pattern —
+> event-driven analytics, multi-service auth, and a fully automated deploy
+> pipeline — not just to shorten links.
 
-**Live app:** https://shortlynk.pages.dev
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![Cloudflare Pages](https://img.shields.io/badge/Cloudflare-Pages-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://pages.cloudflare.com/)
+[![Vitest](https://img.shields.io/badge/Vitest-Tested-6E9F18?style=flat-square&logo=vitest&logoColor=white)](https://vitest.dev/)
+[![GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/features/actions)
+
+**🌐 Live app:** https://shortlynk.pages.dev
+
+---
+
+## Quick start
+
+```bash
+git clone https://github.com/Lucky-939/shortlynk.git
+cd shortlynk
+# See "Local development" below for running all 6 services together
+```
+
+## Table of contents
+
+- [What this demonstrates](#what-this-actually-demonstrates)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Design decisions](#design-decisions-things-to-be-ready-to-defend)
+- [Security & permissions](#security--permissions)
+- [CI/CD pipeline](#cicd-pipeline)
+- [Local development](#local-development)
+- [Repo structure](#repo-structure)
+- [Known limitations](#known-limitations--what-id-improve-with-more-time)
 
 ---
 
@@ -27,6 +55,17 @@ small surface area used to prove out a real distributed-systems pattern:
 - **CI/CD with real, debugged failures** — not a happy-path pipeline copied
   from a tutorial; this one was built by hitting and fixing genuine lockfile
   drift and Workers-runtime version conflicts.
+
+## Features
+
+| Feature | How it works |
+|---|---|
+| 🔗 Short link creation | Custom or auto-generated codes, JWT-gated |
+| ⚡ Instant redirects | `<10ms` public redirect, never blocked by analytics |
+| 📊 Live click analytics | Hourly trends + top referrers, updates every 2s |
+| 🔐 Homegrown auth | PBKDF2 password hashing + HMAC-signed JWTs, no external auth provider |
+| 🛡️ Rate limiting | Per-IP limits on signup, login, and link creation |
+| 🤖 Automated CI/CD | Every push tested; every merge to `main` auto-deploys 5 Workers + frontend |
 
 ## Architecture
 
@@ -231,3 +270,13 @@ Being upfront about trade-offs made under real constraints:
   layer this project doesn't have, and for a portfolio project's threat
   model, client-stored JWT is a reasonable, explained compromise rather
   than an oversight.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Built as a personal portfolio project;
+feel free to fork, adapt, or use as a reference for your own Cloudflare
+Workers experiments.
+
+---
+
+*Built by [Lucky-939](https://github.com/Lucky-939)*
